@@ -69,3 +69,11 @@ jobs:
         with:
           name: coverage-html
           path: target/llvm-cov/html
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-audit
+      - name: cargo audit (RustSec advisories)
+        run: cargo audit
