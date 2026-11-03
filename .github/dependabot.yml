@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # soroban-sdk upgrades follow Stellar protocol releases and need a manual
+  # review (see README "Pinned versions"), so only minor/patch updates of
+  # other crates are proposed automatically.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "soroban-sdk"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
