@@ -1540,3 +1540,14 @@ fn execute_pays_only_the_proposed_token() {
     assert_eq!(other_token.balance(&to), 0);
     assert_eq!(other_token.balance(&s.vault_id), 500);
 }
+
+#[test]
+fn execute_drains_vault_exactly() {
+    let s = Setup::new();
+    s.fund_vault(300);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 300);
+    s.approve(&s.approvers[2], id);
+    assert_eq!(s.try_execute(id), Ok(()));
+    assert_eq!(s.token.balance(&s.vault_id), 0);
+}
