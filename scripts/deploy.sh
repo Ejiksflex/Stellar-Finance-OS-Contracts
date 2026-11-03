@@ -2,13 +2,18 @@
 # Deploy both contracts and write deployments/<network>.json.
 #
 # Usage:
-#   STELLAR_SOURCE=finance-os-deployer \
+#   STELLAR_ACCOUNT=finance-os-deployer \
 #   VAULT_APPROVERS='["G...","G..."]' VAULT_THRESHOLD=2 \
 #   ./scripts/deploy.sh testnet
 #
-# STELLAR_SOURCE is a `stellar keys` identity name. Create one with:
+# STELLAR_ACCOUNT is read by the stellar CLI itself (as --source-account). It
+# can be a `stellar keys` identity name or, in CI, a secret key from a
+# repository secret. It never appears in command arguments. Create a local
+# identity with:
 #   stellar keys generate finance-os-deployer --network testnet --fund
-# (Check the flags with `stellar keys generate --help`. Never commit identities.)
+# Never commit identities.
+#
+# Set SKIP_BUILD=1 to deploy Wasm already in target/ (e.g. built by CI).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,15 +30,18 @@ case "$NETWORK" in
   *) echo "usage: $0 <testnet|mainnet>" >&2; exit 1 ;;
 esac
 
-: "${STELLAR_SOURCE:?set STELLAR_SOURCE to a stellar keys identity name}"
+: "${STELLAR_ACCOUNT:?set STELLAR_ACCOUNT to a stellar keys identity name or secret key}"
+export STELLAR_ACCOUNT
 : "${VAULT_APPROVERS:?set VAULT_APPROVERS to a JSON array of approver addresses}"
 : "${VAULT_THRESHOLD:?set VAULT_THRESHOLD}"
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
-./scripts/build.sh
+if [[ "${SKIP_BUILD:-}" != "1" ]]; then
+  ./scripts/build.sh
+fi
 
 WASM_DIR=target/wasm32v1-none/release
-NET_ARGS=(--source-account "$STELLAR_SOURCE" --network "$NETWORK")
+NET_ARGS=(--network "$NETWORK")
 
 upload() { stellar contract upload --wasm "$1" "${NET_ARGS[@]}" | tail -n1; }
 

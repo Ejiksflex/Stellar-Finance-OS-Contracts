@@ -197,7 +197,7 @@ stellar contract build        # or ./scripts/build.sh
 cargo test
 
 # deploy to testnet (script wraps `stellar contract deploy` and writes deployments/testnet.json)
-STELLAR_SOURCE=finance-os-deployer \
+STELLAR_ACCOUNT=finance-os-deployer \
 VAULT_APPROVERS='["G...","G..."]' VAULT_THRESHOLD=2 \
 ./scripts/deploy.sh testnet
 
