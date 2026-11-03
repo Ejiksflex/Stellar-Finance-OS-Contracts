@@ -14,7 +14,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
-use crate::events::Registered;
+use crate::events::{Paid, Registered};
 use crate::types::{Error, Invoice, InvoiceStatus};
 
 #[contract]
@@ -67,7 +67,50 @@ impl InvoiceRegistry {
         Ok(())
     }
 
-    // TODO(task 5): pay, void
+    /// Pay `amount` towards an Open invoice. Tokens move straight from
+    /// `payer` to the invoice's `business` address. Partial payments are
+    /// allowed. The invoice becomes Paid once `paid == amount`.
+    ///
+    /// Overpayment is rejected (README §5 lists it as a failure path), so
+    /// `paid` can never exceed `amount`.
+    pub fn pay(env: Env, payer: Address, id: BytesN<32>, amount: i128) -> Result<(), Error> {
+        payer.require_auth();
+        storage::bump_instance(&env);
+        if !amount::is_positive(amount) {
+            return Err(Error::InvalidAmount);
+        }
+        let mut invoice = storage::get_invoice(&env, &id).ok_or(Error::InvoiceNotFound)?;
+        if invoice.status != InvoiceStatus::Open {
+            return Err(Error::NotOpen);
+        }
+        let total_paid = invoice
+            .paid
+            .checked_add(amount)
+            .ok_or(Error::ArithmeticOverflow)?;
+        if total_paid > invoice.amount {
+            return Err(Error::Overpayment);
+        }
+
+        // Update state before calling the token contract.
+        invoice.paid = total_paid;
+        if total_paid == invoice.amount {
+            invoice.status = InvoiceStatus::Paid;
+        }
+        storage::set_invoice(&env, &invoice);
+
+        token::TokenClient::new(&env, &invoice.token).transfer(&payer, &invoice.business, &amount);
+
+        Paid {
+            id,
+            payer,
+            amount,
+            total_paid,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    // TODO(task 5): void
 
     pub fn get(env: Env, id: BytesN<32>) -> Result<Invoice, Error> {
         storage::bump_instance(&env);
