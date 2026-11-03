@@ -32,6 +32,16 @@ jobs:
       - uses: stellar/stellar-cli@v28.1.0
       - name: stellar contract build
         run: ./scripts/build.sh
+      - name: Wasm size limit (64 KiB network max)
+        run: |
+          for f in target/wasm32v1-none/release/*.wasm; do
+            size=$(stat -c %s "$f")
+            echo "$f: $size bytes"
+            if [ "$size" -gt 65536 ]; then
+              echo "::error file=$f::$size bytes exceeds the 64 KiB contract size limit"
+              exit 1
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: wasm
