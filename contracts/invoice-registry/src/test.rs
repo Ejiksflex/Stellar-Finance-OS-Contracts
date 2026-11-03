@@ -613,3 +613,17 @@ fn invoice_ttl_is_extended_on_access() {
     s.registry.get(&id);
     assert_eq!(invoice_ttl(&s, &id), start);
 }
+
+// ---------------------------------------------------------------- edge cases
+
+#[test]
+fn invoices_are_independent() {
+    let s = Setup::new();
+    let a = s.register(1, 100);
+    let b = s.register(2, 200);
+    let payer = s.payer(1_000);
+    s.pay(&payer, &a, 100);
+    assert_eq!(s.registry.get(&a).status, InvoiceStatus::Paid);
+    let inv_b = s.registry.get(&b);
+    assert_eq!((inv_b.paid, inv_b.status), (0, InvoiceStatus::Open));
+}
