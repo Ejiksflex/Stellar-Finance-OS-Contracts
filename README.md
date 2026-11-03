@@ -92,7 +92,7 @@ Only hashes and the payable amount go on-chain. **Never put customer names, desc
 
 | Tool | Version | Notes |
 |---|---|---|
-| Rust | stable, **≥ 1.84** | `rust-toolchain.toml` installs the `wasm32v1-none` target, `rustfmt` and `clippy` |
+| Rust | **1.99.1** (pinned) | `rust-toolchain.toml` pins it and installs the `wasm32v1-none` target, `rustfmt` and `clippy`. Pinned for reproducible Wasm |
 | [Stellar CLI](https://developers.stellar.org/docs/tools/cli) | **≥ 25.2** (CI uses 28.1.0) | Needed to build Wasm, deploy, and generate bindings. Not needed for tests |
 | `jq` | any | Used by `deploy.sh` |
 | `cargo-llvm-cov` | optional | Only for `./scripts/coverage.sh` |
@@ -433,6 +433,7 @@ Deliver: contract code + tests for every failure path. List any deviations from 
 | Item | Version | Why |
 |---|---|---|
 | `soroban-sdk` | 29.0.1 | Latest stable at implementation time (30.x was RC) |
+| Rust toolchain | 1.99.1 | Same commit → same Wasm bytes → same on-chain hash |
 | Rust target | `wasm32v1-none` | Current target required by the Stellar CLI |
 | Stellar CLI (CI) | 28.1.0 | soroban-sdk 29 requires ≥ 25.2.0 |
 
