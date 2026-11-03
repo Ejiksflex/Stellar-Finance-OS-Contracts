@@ -22,7 +22,12 @@ event shape or error code is a **major** bump.
 - Scripts: `build`, `check`, `coverage`, `deploy`, `bindings`.
 - CI: fmt/clippy/test gate, Wasm build with size limit, coverage, cargo-audit.
 - Workflows: manual testnet deploy, tag-triggered release with checksums.
-- Docs: threat model, coverage report, security policy, contributing guide.
+- Docs: threat model, coverage report, security policy, contributing guide,
+  event decoding guide for the indexer, testnet runbook.
+- Tests: property tests for M-of-N execution, policy validation and invoice
+  payment invariants; exact auth-tree assertions; event XDR pinned to docs.
+- Build: contract meta records `source_repo` and `source_rev`; deployments
+  record `sourceRev` and `cliVersion`.
 
 ### Deviations from the original design
 - Policy changes use a dedicated proposal flow (`propose_policy_update` →
