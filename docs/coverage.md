@@ -5,7 +5,7 @@ on 2026-11-03. Test modules are excluded from the figures.
 
 | File | Lines | Regions | Functions |
 |---|---|---|---|
-| contracts/approval-vault/src/lib.rs | 100.00% | 99.51% | 100.00% |
+| contracts/approval-vault/src/lib.rs | 100.00% | 99.55% | 100.00% |
 | contracts/approval-vault/src/storage.rs | 98.18% | 97.75% | 88.89% |
 | contracts/approval-vault/src/types.rs | 0.00% | 0.00% | 0.00% |
 | contracts/invoice-registry/src/lib.rs | 100.00% | 100.00% | 100.00% |
@@ -13,7 +13,7 @@ on 2026-11-03. Test modules are excluded from the figures.
 | contracts/invoice-registry/src/types.rs | 0.00% | 0.00% | 0.00% |
 | packages/common/src/amount.rs | 100.00% | 100.00% | 100.00% |
 | packages/common/src/ttl.rs | 100.00% | 100.00% | 100.00% |
-| **Total** | **98.23%** | **98.38%** | **83.67%** |
+| **Total** | **98.29%** | **98.46%** | **84.00%** |
 
 ## Uncovered lines
 
