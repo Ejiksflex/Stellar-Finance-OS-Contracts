@@ -1,12 +1,21 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
-    vec, Address, Env, IntoVal, Val,
+    vec, Address, BytesN, Env, Event as _, IntoVal, Val,
 };
 
-use crate::{types::Error, ApprovalVault, ApprovalVaultClient};
+use crate::{
+    events,
+    types::{Error, ProposalStatus},
+    ApprovalVault, ApprovalVaultClient,
+};
+
+/// Ledger timestamp every fixture starts at.
+const NOW: u64 = 1_000_000;
+/// Default proposal lifetime used by the fixture.
+const TTL: u64 = 3_600;
 
 /// Test fixture: a vault with 3 approvers, threshold 2, and a SAC token.
 ///
@@ -25,6 +34,7 @@ struct Setup<'a> {
 impl Setup<'_> {
     fn new() -> Self {
         let env = Env::default();
+        env.ledger().set_timestamp(NOW);
         let approvers = [
             Address::generate(&env),
             Address::generate(&env),
@@ -85,6 +95,52 @@ impl Setup<'_> {
         )];
         auth(&self.env, &from, &self.vault_id, "deposit", args, &sub);
         self.vault.deposit(&from, &self.token.address, &amount);
+    }
+}
+
+impl Setup<'_> {
+    fn memo(&self, n: u8) -> BytesN<32> {
+        BytesN::from_array(&self.env, &[n; 32])
+    }
+
+    /// `proposer` proposes paying `amount` to `to`, expiring at `NOW + TTL`.
+    fn propose(&self, proposer: &Address, to: &Address, amount: i128) -> u64 {
+        self.try_propose(proposer, proposer, to, amount, NOW + TTL)
+            .expect("propose ok")
+    }
+
+    /// Propose with full control: `signer` is who actually authorises.
+    fn try_propose(
+        &self,
+        signer: &Address,
+        proposer: &Address,
+        to: &Address,
+        amount: i128,
+        expires_at: u64,
+    ) -> Result<u64, Option<Error>> {
+        let memo = self.memo(1);
+        let args = (
+            proposer.clone(),
+            self.token.address.clone(),
+            to.clone(),
+            amount,
+            memo.clone(),
+            expires_at,
+        )
+            .into_val(&self.env);
+        auth(&self.env, signer, &self.vault_id, "propose", args, &[]);
+        match self.vault.try_propose(
+            proposer,
+            &self.token.address,
+            to,
+            &amount,
+            &memo,
+            &expires_at,
+        ) {
+            Ok(Ok(id)) => Ok(id),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
     }
 }
 
@@ -267,4 +323,114 @@ fn balance_reports_vault_holdings() {
     s.fund_vault(250);
     s.fund_vault(750);
     assert_eq!(s.vault.balance(&s.token.address), 1_000);
+}
+
+// ---------------------------------------------------------------- propose
+
+#[test]
+fn propose_creates_pending_proposal_with_proposer_approval() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+
+    let p = s.vault.get_proposal(&id);
+    assert_eq!(p.id, 0);
+    assert_eq!(p.token, s.token.address);
+    assert_eq!(p.to, to);
+    assert_eq!(p.amount, 400);
+    assert_eq!(p.memo_ref, s.memo(1));
+    assert_eq!(p.created_by, s.approvers[0]);
+    assert_eq!(p.approvals, vec![&s.env, s.approvers[0].clone()]);
+    assert_eq!(p.status, ProposalStatus::Pending);
+    assert_eq!(p.expires_at, NOW + TTL);
+}
+
+#[test]
+fn propose_emits_proposed_event() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    let expected = events::Proposed {
+        proposal_id: id,
+        proposer: s.approvers[0].clone(),
+        token: s.token.address.clone(),
+        to,
+        amount: 400,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+}
+
+#[test]
+fn propose_assigns_sequential_ids() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    assert_eq!(s.propose(&s.approvers[0], &to, 1), 0);
+    assert_eq!(s.propose(&s.approvers[1], &to, 1), 1);
+    assert_eq!(s.propose(&s.approvers[2], &to, 1), 2);
+}
+
+#[test]
+fn propose_rejects_non_approver() {
+    let s = Setup::new();
+    let outsider = Address::generate(&s.env);
+    let to = Address::generate(&s.env);
+    let res = s.try_propose(&outsider, &outsider, &to, 10, NOW + TTL);
+    assert_eq!(res, Err(Some(Error::NotApprover)));
+}
+
+#[test]
+fn propose_rejects_wrong_signer() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    // approvers[1] signs a proposal claiming to be from approvers[0].
+    let res = s.try_propose(&s.approvers[1], &s.approvers[0], &to, 10, NOW + TTL);
+    assert_eq!(res, Err(None));
+}
+
+#[test]
+fn propose_rejects_zero_amount() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let res = s.try_propose(&s.approvers[0], &s.approvers[0], &to, 0, NOW + TTL);
+    assert_eq!(res, Err(Some(Error::InvalidAmount)));
+}
+
+#[test]
+fn propose_rejects_negative_amount() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let res = s.try_propose(&s.approvers[0], &s.approvers[0], &to, -1, NOW + TTL);
+    assert_eq!(res, Err(Some(Error::InvalidAmount)));
+}
+
+#[test]
+fn propose_rejects_expiry_in_past() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let res = s.try_propose(&s.approvers[0], &s.approvers[0], &to, 10, NOW - 1);
+    assert_eq!(res, Err(Some(Error::InvalidExpiry)));
+}
+
+#[test]
+fn propose_rejects_expiry_equal_to_now() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let res = s.try_propose(&s.approvers[0], &s.approvers[0], &to, 10, NOW);
+    assert_eq!(res, Err(Some(Error::InvalidExpiry)));
+}
+
+#[test]
+fn get_proposal_rejects_unknown_id() {
+    let s = Setup::new();
+    assert_eq!(
+        s.vault.try_get_proposal(&99),
+        Err(Ok(Error::ProposalNotFound))
+    );
 }

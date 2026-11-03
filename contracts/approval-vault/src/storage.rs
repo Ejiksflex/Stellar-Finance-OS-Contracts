@@ -13,7 +13,7 @@
 use finance_os_common::ttl;
 use soroban_sdk::{contracttype, Env};
 
-use crate::types::Policy;
+use crate::types::{Error, Policy, Proposal};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,4 +37,35 @@ pub fn get_policy(env: &Env) -> Policy {
 
 pub fn set_policy(env: &Env, policy: &Policy) {
     env.storage().instance().set(&DataKey::Policy, policy);
+}
+
+/// Allocate the next proposal id. Ids start at 0 and are never reused.
+pub fn next_proposal_id(env: &Env) -> Result<u64, Error> {
+    let id: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextProposalId)
+        .unwrap_or(0);
+    let next = id.checked_add(1).ok_or(Error::ArithmeticOverflow)?;
+    env.storage()
+        .instance()
+        .set(&DataKey::NextProposalId, &next);
+    Ok(id)
+}
+
+pub fn get_proposal(env: &Env, id: u64) -> Result<Proposal, Error> {
+    let key = DataKey::Proposal(id);
+    let proposal = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(Error::ProposalNotFound)?;
+    ttl::extend_persistent(env, &key);
+    Ok(proposal)
+}
+
+pub fn set_proposal(env: &Env, proposal: &Proposal) {
+    let key = DataKey::Proposal(proposal.id);
+    env.storage().persistent().set(&key, proposal);
+    ttl::extend_persistent(env, &key);
 }
