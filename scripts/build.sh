@@ -14,5 +14,12 @@ if [[ "$(printf '%s\n%s\n' "$MIN_CLI" "$CLI_VERSION" | sort -V | head -n1)" != "
   exit 1
 fi
 
-stellar contract build "$@"
+# Embed provenance in each Wasm's contractmeta section so a deployed contract
+# can be traced back to its exact source (SEP-55 style `source_repo`).
+META=(--meta "source_repo=github:Stellar-Finance-OS/Stellar-Finance-OS-Contracts")
+if REV=$(git rev-parse HEAD 2>/dev/null); then
+  META+=(--meta "source_rev=$REV")
+fi
+
+stellar contract build "${META[@]}" "$@"
 ls -lh target/wasm32v1-none/release/*.wasm
