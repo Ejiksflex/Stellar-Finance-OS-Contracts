@@ -1,0 +1,13 @@
+# cargo-audit configuration. Every ignore needs a reason and a revisit trigger.
+
+[advisories]
+ignore = [
+  # crypto-bigint 0.5.5: constant-time timing variability (fixed in >= 0.7.6).
+  # Pulled in only by soroban-env-host (k256/p256), which is the *native test
+  # host* used by `cargo test`. It is not part of the contract Wasm:
+  #   cargo tree --target wasm32v1-none -e normal -i crypto-bigint  -> nothing
+  # On-chain, the network's own host runs. The fix is semver-incompatible with
+  # soroban-env-host 29.
+  # Revisit when upgrading soroban-sdk.
+  "RUSTSEC-2026-0387",
+]
