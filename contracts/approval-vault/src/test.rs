@@ -1685,3 +1685,30 @@ fn propose_requires_exactly_the_proposers_auth() {
         )]
     );
 }
+
+#[test]
+fn deposit_requires_depositor_auth_for_vault_and_token_transfer() {
+    let s = Setup::new();
+    s.fund_vault(25);
+    let auths = s.env.auths();
+    assert_eq!(auths.len(), 1);
+    let (signer, invocation) = &auths[0];
+    let transfer_args = (signer.clone(), s.vault_id.clone(), 25i128).into_val(&s.env);
+    let deposit_args = (signer.clone(), s.token.address.clone(), 25i128).into_val(&s.env);
+    assert_eq!(
+        invocation,
+        &contract_call(
+            &s.env,
+            &s.vault_id,
+            "deposit",
+            deposit_args,
+            std::vec![contract_call(
+                &s.env,
+                &s.token.address,
+                "transfer",
+                transfer_args,
+                std::vec![]
+            )]
+        )
+    );
+}
