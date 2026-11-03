@@ -48,8 +48,14 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 3): propose, approve, execute, cancel, get_proposal, balance
+    // TODO(task 3): propose, approve, execute, cancel, get_proposal
     // TODO(task 4): policy update via threshold-approved proposal
+
+    /// The vault's balance of `token`.
+    pub fn balance(env: Env, token: Address) -> i128 {
+        storage::bump_instance(&env);
+        token::TokenClient::new(&env, &token).balance(&env.current_contract_address())
+    }
 
     pub fn get_policy(env: Env) -> Policy {
         storage::bump_instance(&env);

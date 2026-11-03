@@ -257,3 +257,14 @@ fn deposit_fails_with_insufficient_funds() {
     assert!(s.vault.try_deposit(&from, &s.token.address, &100).is_err());
     assert_eq!(s.token.balance(&from), 50);
 }
+
+// ---------------------------------------------------------------- views
+
+#[test]
+fn balance_reports_vault_holdings() {
+    let s = Setup::new();
+    assert_eq!(s.vault.balance(&s.token.address), 0);
+    s.fund_vault(250);
+    s.fund_vault(750);
+    assert_eq!(s.vault.balance(&s.token.address), 1_000);
+}
