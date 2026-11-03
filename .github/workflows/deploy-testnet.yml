@@ -57,6 +57,9 @@ jobs:
           VAULT_THRESHOLD: ${{ inputs.threshold }}
         run: ./scripts/deploy.sh testnet
 
+      - name: Verify on-chain Wasm matches build
+        run: ./scripts/verify-deployment.sh testnet
+
       - name: Smoke test
         run: |
           VAULT=$(jq -r .approvalVault deployments/testnet.json)
