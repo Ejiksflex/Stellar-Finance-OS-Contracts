@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a change to a contract's behaviour or the tooling.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today? Note that business logic belongs in the backend (AGENTS.md rule 4).
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Impact
+      options:
+        - label: Changes a function signature, event shape or error code (breaking)
