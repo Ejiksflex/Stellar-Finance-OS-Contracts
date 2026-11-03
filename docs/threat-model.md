@@ -31,7 +31,7 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | V2 | One approver counts twice | `approvals` holds unique addresses; `AlreadyApproved` | `approve_rejects_double_approval`, `approve_rejects_proposer_approving_again` |
 | V3 | Executing below threshold | `count_valid_approvals >= threshold`, checked in `execute`/`update_policy` | `execute_rejects_threshold_not_met`, `update_policy_rejects_threshold_not_met` |
 | V4 | Replay / double execution | Status is set to Executed before the transfer; `NotPending` | `execute_rejects_double_execution`, `update_policy_rejects_double_apply` |
-| V5 | Stale approvals after the approver set changes | Approvals are re-filtered against the *current* policy at execution time | `stale_approvals_do_not_count_after_policy_change`, `competing_policy_proposal_needs_approvals_from_new_set` |
+| V5 | Stale approvals after the approver set changes | Approvals are re-filtered against the *current* policy at execution time and pruned on every approve, so the list stays ≤ `MAX_APPROVERS` | `stale_approvals_do_not_count_after_policy_change`, `competing_policy_proposal_needs_approvals_from_new_set`, `approve_prunes_approvals_from_removed_approvers` |
 | V6 | Executing an old proposal long after intent | `expires_at` must be in the future at creation; approve/execute reject once `now >= expires_at` | `*_rejects_expired`, `propose_rejects_expiry_*` |
 | V7 | Policy bricked (threshold > approvers, empty set) | `validate_policy` on construction and on every policy proposal | `constructor_rejects_*`, `propose_policy_update_rejects_*` |
 | V8 | Unbounded approver set exhausts resource limits | `MAX_APPROVERS = 20` | `constructor_rejects_too_many_approvers` |

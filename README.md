@@ -26,7 +26,7 @@ You can scaffold this repo now and build it in parallel, but don't block the MVP
 | 8 | Backend indexer integration | backend repo |
 | 9 | Audit prep | [`docs/threat-model.md`](docs/threat-model.md), [`docs/coverage.md`](docs/coverage.md) |
 
-116 tests. Contract logic has 100% line coverage.
+117 tests. Contract logic has 100% line coverage.
 
 ---
 
@@ -116,7 +116,7 @@ Holds an organisation's treasury tokens. Outgoing payments are proposals that ne
 
 **Deviation from the original sketch:** `update_policy(new_approvers, new_threshold)` is split into `propose_policy_update` / `approve_policy_update` / `update_policy(id)` / `cancel_policy_update`. This is how "its own proposal type" works in practice.
 
-**Approvals are re-checked against the current policy.** If an approver is removed, their approvals on still-pending proposals stop counting.
+**Approvals are re-checked against the current policy.** If an approver is removed, their approvals on still-pending proposals stop counting, and they are pruned from the list on the next `approve`.
 
 ### Events
 
