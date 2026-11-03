@@ -78,3 +78,46 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    /// propose_policy_update accepts a policy iff 1 <= t <= n <= MAX_APPROVERS
+    /// and the approver list has no duplicates, and reports the right error
+    /// otherwise.
+    #[test]
+    fn policy_validation_matches_spec(n in 0u32..24, t in 0u32..24, dup in any::<bool>()) {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000);
+        let admin = Address::generate(&env);
+        let vault_id = env.register(ApprovalVault, (soroban_sdk::vec![&env, admin.clone()], 1u32));
+        let vault = ApprovalVaultClient::new(&env, &vault_id);
+
+        let mut new = Vec::new(&env);
+        for _ in 0..n {
+            new.push_back(Address::generate(&env));
+        }
+        let has_dup = dup && n >= 2;
+        if has_dup {
+            new.set(1, new.get(0).unwrap());
+        }
+
+        mock(&env, &admin, &vault_id, "propose_policy_update",
+             (admin.clone(), new.clone(), t, 2_000u64).into_val(&env));
+        let res = vault.try_propose_policy_update(&admin, &new, &t, &2_000);
+
+        let expected = if n > crate::types::MAX_APPROVERS {
+            Some(Error::TooManyApprovers)
+        } else if t == 0 || t > n {
+            Some(Error::InvalidThreshold)
+        } else if has_dup {
+            Some(Error::DuplicateApprover)
+        } else {
+            None
+        };
+        match expected {
+            None => prop_assert!(res.is_ok()),
+            Some(e) => prop_assert_eq!(res, Err(Ok(e))),
+        }
+    }
+}
