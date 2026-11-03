@@ -638,3 +638,15 @@ fn voiding_one_invoice_leaves_others_payable() {
     s.pay(&payer, &b, 100);
     assert_eq!(s.registry.get(&b).status, InvoiceStatus::Paid);
 }
+
+#[test]
+fn same_content_hash_may_back_different_ids() {
+    let s = Setup::new();
+    // try_register always uses the same content hash.
+    s.register(1, 100);
+    s.register(2, 100);
+    assert_eq!(
+        s.registry.get(&s.hash(1)).content_hash,
+        s.registry.get(&s.hash(2)).content_hash
+    );
+}
