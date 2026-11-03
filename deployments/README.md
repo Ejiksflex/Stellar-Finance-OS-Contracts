@@ -9,6 +9,8 @@ The backend reads these via `CONTRACT_DEPLOYMENTS_PATH`.
 {
   "network": "testnet",              // "testnet" | "mainnet"
   "version": "v0.1.0-3-gabc1234",    // `git describe` of the deployed source
+  "sourceRev": "<40 hex>",           // full commit hash (also embedded as contract meta)
+  "cliVersion": "stellar 28.1.0 …",  // CLI that built and deployed it
   "deployedAt": "2026-11-03T12:00:00Z",
   "approvalVault": "C...",           // contract id
   "invoiceRegistry": "C...",         // contract id

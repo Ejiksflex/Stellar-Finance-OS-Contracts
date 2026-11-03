@@ -81,8 +81,10 @@ jq -n \
   --arg vault "$VAULT_ID" --arg registry "$REGISTRY_ID" \
   --arg vaultHash "$VAULT_HASH" --arg registryHash "$REGISTRY_HASH" \
   --arg version "$(git describe --tags --always --dirty 2>/dev/null || echo unknown)" \
+  --arg sourceRev "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+  --arg cliVersion "$(stellar --version | head -n1)" \
   --arg deployedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{network: $network, version: $version, deployedAt: $deployedAt,
+  '{network: $network, version: $version, sourceRev: $sourceRev, cliVersion: $cliVersion, deployedAt: $deployedAt,
     approvalVault: $vault, invoiceRegistry: $registry,
     wasmHash: {approvalVault: $vaultHash, invoiceRegistry: $registryHash}}' > "$OUT"
 

@@ -1,6 +1,8 @@
 {
   "network": "mainnet",
   "version": null,
+  "sourceRev": null,
+  "cliVersion": null,
   "deployedAt": null,
   "approvalVault": null,
   "invoiceRegistry": null,
