@@ -128,7 +128,7 @@ cd Stellar-Finance-OS-Contracts
 ├── packages/common/            # shared TTL policy + amount validation
 ├── bindings/                   # generated TypeScript clients (do not edit)
 ├── deployments/                # <network>.json: contract ids + Wasm hashes
-├── docs/                       # threat model, coverage report
+├── docs/                       # threat model, coverage, events guide, testnet runbook
 ├── scripts/                    # build · check · coverage · deploy · bindings
 ├── .github/workflows/          # ci.yml · deploy-testnet.yml
 └── AGENTS.md                   # rules for AI agents working in this repo
@@ -371,7 +371,7 @@ VAULT_THRESHOLD=2 \
 |---|---|---|
 | [`deployments/<network>.json`](deployments/README.md) | backend | Read via `CONTRACT_DEPLOYMENTS_PATH` |
 | [`bindings/`](bindings/README.md) (TypeScript) | backend `packages/stellar`, web `packages/wallet` | Package or git dependency |
-| Events ([§3](#events), [§4](#events-1)) | backend indexer | The tables above are the contract |
+| Events ([§3](#events), [§4](#events-1)) | backend indexer | The tables above are the contract. [`docs/events.md`](docs/events.md) has the topic filters (base64 XDR) and mirroring rules |
 
 ### Versioning
 
