@@ -1633,3 +1633,12 @@ fn approve_policy_update_rejects_cancelled() {
         Err(Some(Error::NotPending))
     );
 }
+
+#[test]
+fn get_policy_proposal_rejects_unknown_id() {
+    let s = Setup::new();
+    assert_eq!(
+        s.vault.try_get_policy_proposal(&0),
+        Err(Ok(Error::ProposalNotFound))
+    );
+}
