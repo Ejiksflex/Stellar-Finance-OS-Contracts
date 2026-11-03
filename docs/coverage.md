@@ -1,7 +1,8 @@
 # Test coverage report
 
 Generated with `./scripts/coverage.sh` (cargo-llvm-cov 0.9.1, soroban-sdk 29.0.1)
-on 2026-11-03. Test modules are excluded from the figures.
+on 2026-11-03 with 145 tests (including 3 property tests). Test and
+property-test modules are excluded from the figures.
 
 | File | Lines | Regions | Functions |
 |---|---|---|---|
