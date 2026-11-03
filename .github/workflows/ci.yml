@@ -17,7 +17,7 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,7 +29,7 @@ jobs:
         run: ./scripts/check.sh
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -55,7 +55,7 @@ jobs:
           path: target/wasm32v1-none/release/*.wasm
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -71,7 +71,7 @@ jobs:
           path: target/llvm-cov/html
 
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-audit
