@@ -1,0 +1,52 @@
+//! Events emitted by the approval vault. Consumed by the backend indexer.
+//!
+//! **Changing any of these shapes is a breaking change**: update README §3
+//! and bump the major version.
+//!
+//! Topic layout: `[<event_name>, proposal_id]`. The event name is the struct
+//! name in snake_case. `proposal_id` is a topic so the indexer can filter on it.
+
+use soroban_sdk::{contractevent, Address};
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Proposed {
+    #[topic]
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub token: Address,
+    pub to: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Approved {
+    #[topic]
+    pub proposal_id: u64,
+    pub approver: Address,
+    pub approvals: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Executed {
+    #[topic]
+    pub proposal_id: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Cancelled {
+    #[topic]
+    pub proposal_id: u64,
+    pub cancelled_by: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyUpdated {
+    #[topic]
+    pub proposal_id: u64,
+    pub threshold: u32,
+}

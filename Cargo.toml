@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["contracts/*", "packages/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Pinned to the latest stable release at scaffold time (2026-11-03).
+soroban-sdk = "29.0.1"
+finance-os-common = { path = "packages/common" }
+
+# Release profile recommended by the Stellar docs for Soroban contracts.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+# Same as release but keeps diagnostic logs (`stellar contract build --profile release-with-logs`).
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

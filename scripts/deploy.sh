@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Deploy both contracts and write deployments/<network>.json.
+#
+# Usage:
+#   STELLAR_SOURCE=finance-os-deployer \
+#   VAULT_APPROVERS='["G...","G..."]' VAULT_THRESHOLD=2 \
+#   ./scripts/deploy.sh testnet
+#
+# STELLAR_SOURCE is a `stellar keys` identity name. Create one with:
+#   stellar keys generate finance-os-deployer --network testnet --fund
+# (Check the flags with `stellar keys generate --help`. Never commit identities.)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+NETWORK="${1:-}"
+case "$NETWORK" in
+  testnet) ;;
+  mainnet)
+    # README §5: no mainnet deployment without an external audit.
+    if [[ "${FINANCE_OS_MAINNET_AUDITED:-}" != "yes" ]]; then
+      echo "Refusing mainnet deploy: contracts must be externally audited first (README §5)." >&2
+      echo "Set FINANCE_OS_MAINNET_AUDITED=yes only once an audit report is in hand." >&2
+      exit 1
+    fi ;;
+  *) echo "usage: $0 <testnet|mainnet>" >&2; exit 1 ;;
+esac
+
+: "${STELLAR_SOURCE:?set STELLAR_SOURCE to a stellar keys identity name}"
+: "${VAULT_APPROVERS:?set VAULT_APPROVERS to a JSON array of approver addresses}"
+: "${VAULT_THRESHOLD:?set VAULT_THRESHOLD}"
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+./scripts/build.sh
+
+WASM_DIR=target/wasm32v1-none/release
+NET_ARGS=(--source-account "$STELLAR_SOURCE" --network "$NETWORK")
+
+upload() { stellar contract upload --wasm "$1" "${NET_ARGS[@]}" | tail -n1; }
+
+echo "Uploading Wasm…"
+VAULT_HASH=$(upload "$WASM_DIR/approval_vault.wasm")
+REGISTRY_HASH=$(upload "$WASM_DIR/invoice_registry.wasm")
+
+echo "Deploying approval-vault…"
+VAULT_ID=$(stellar contract deploy --wasm-hash "$VAULT_HASH" "${NET_ARGS[@]}" \
+  -- --approvers "$VAULT_APPROVERS" --threshold "$VAULT_THRESHOLD" | tail -n1)
+
+echo "Deploying invoice-registry…"
+REGISTRY_ID=$(stellar contract deploy --wasm-hash "$REGISTRY_HASH" "${NET_ARGS[@]}" | tail -n1)
+
+OUT="deployments/$NETWORK.json"
+jq -n \
+  --arg network "$NETWORK" \
+  --arg vault "$VAULT_ID" --arg registry "$REGISTRY_ID" \
+  --arg vaultHash "$VAULT_HASH" --arg registryHash "$REGISTRY_HASH" \
+  --arg version "$(git describe --tags --always --dirty 2>/dev/null || echo unknown)" \
+  --arg deployedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{network: $network, version: $version, deployedAt: $deployedAt,
+    approvalVault: $vault, invoiceRegistry: $registry,
+    wasmHash: {approvalVault: $vaultHash, invoiceRegistry: $registryHash}}' > "$OUT"
+
+echo "Wrote $OUT"
+cat "$OUT"

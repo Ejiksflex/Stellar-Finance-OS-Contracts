@@ -1,0 +1,20 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Stellar CLI identities / local config: NEVER commit keys or seeds
+.stellar/
+.soroban/
+*.secret
+*.seed
+.env
+.env.*
+
+# Test snapshots written by soroban-sdk testutils
+**/test_snapshots/
+
+# Bindings build output (sources are committed; built JS/deps are not)
+bindings/*/node_modules/
+bindings/*/dist/
+
+.DS_Store

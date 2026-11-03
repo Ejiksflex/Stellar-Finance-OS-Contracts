@@ -1,0 +1,33 @@
+//! Storage keys and accessors for the invoice registry.
+//!
+//! Layout: `Invoice(id)` → **persistent** storage, one entry per invoice.
+//!
+//! TTL strategy (see `finance_os_common::ttl`): every entrypoint bumps the
+//! instance TTL. Every invoice read/write bumps that invoice's TTL, so an
+//! invoice someone is still paying or querying stays live. Invoices nobody
+//! touches may be archived after about 30 days. They remain restorable, and
+//! the backend keeps the canonical record.
+
+use finance_os_common::ttl;
+use soroban_sdk::{contracttype, BytesN, Env};
+
+use crate::types::Invoice;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    Invoice(BytesN<32>),
+}
+
+pub fn bump_instance(env: &Env) {
+    ttl::extend_instance(env);
+}
+
+pub fn get_invoice(env: &Env, id: &BytesN<32>) -> Option<Invoice> {
+    let key = DataKey::Invoice(id.clone());
+    let invoice = env.storage().persistent().get(&key);
+    if invoice.is_some() {
+        ttl::extend_persistent(env, &key);
+    }
+    invoice
+}

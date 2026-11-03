@@ -1,0 +1,11 @@
+{
+  "network": "testnet",
+  "version": null,
+  "deployedAt": null,
+  "approvalVault": null,
+  "invoiceRegistry": null,
+  "wasmHash": {
+    "approvalVault": null,
+    "invoiceRegistry": null
+  }
+}
