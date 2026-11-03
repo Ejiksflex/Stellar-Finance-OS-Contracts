@@ -703,3 +703,14 @@ fn get_returns_void_invoice() {
         (InvoiceStatus::Void, 0, 100)
     );
 }
+
+#[test]
+fn void_does_not_free_the_id_for_reuse() {
+    let s = Setup::new();
+    let id = s.register(1, 100);
+    s.try_void(&s.business, &s.business, &id).unwrap();
+    assert_eq!(
+        s.try_register(&s.business, &s.business, &id, &s.token.address, 100),
+        Err(Some(Error::InvoiceExists))
+    );
+}
