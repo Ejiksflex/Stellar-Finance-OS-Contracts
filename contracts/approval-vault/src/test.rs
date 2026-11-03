@@ -1565,3 +1565,16 @@ fn two_proposals_cannot_overspend_vault() {
     assert_eq!(s.try_execute(b), Err(Some(Error::InsufficientBalance)));
     assert_eq!(s.vault.get_proposal(&b).status, ProposalStatus::Pending);
 }
+
+#[test]
+fn insufficient_balance_proposal_executes_after_top_up() {
+    let s = Setup::new();
+    s.fund_vault(100);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 250);
+    s.approve(&s.approvers[1], id);
+    assert_eq!(s.try_execute(id), Err(Some(Error::InsufficientBalance)));
+    s.fund_vault(150);
+    assert_eq!(s.try_execute(id), Ok(()));
+    assert_eq!(s.token.balance(&to), 250);
+}
