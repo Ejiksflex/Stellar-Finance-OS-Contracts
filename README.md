@@ -128,7 +128,7 @@ cd Stellar-Finance-OS-Contracts
 ├── packages/common/            # shared TTL policy + amount validation
 ├── bindings/                   # generated TypeScript clients (do not edit)
 ├── deployments/                # <network>.json: contract ids + Wasm hashes
-├── docs/                       # threat model, coverage, events guide, testnet runbook
+├── docs/                       # threat model, coverage, events, testnet runbook, build verification
 ├── scripts/                    # build · check · coverage · deploy · bindings
 ├── .github/workflows/          # ci.yml · deploy-testnet.yml
 └── AGENTS.md                   # rules for AI agents working in this repo
