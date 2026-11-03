@@ -1517,3 +1517,26 @@ fn balances_are_tracked_per_token() {
     assert_eq!(s.vault.balance(&s.token.address), 50);
     assert_eq!(s.vault.balance(&other.address()), 7);
 }
+
+#[test]
+fn execute_pays_only_the_proposed_token() {
+    let s = Setup::new();
+    let other_admin = Address::generate(&s.env);
+    let other = s
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let args: soroban_sdk::Vec<Val> = (s.vault_id.clone(), 500i128).into_val(&s.env);
+    auth(&s.env, &other_admin, &other.address(), "mint", args, &[]);
+    StellarAssetClient::new(&s.env, &other.address()).mint(&s.vault_id, &500);
+    s.fund_vault(500);
+
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 200);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+
+    let other_token = TokenClient::new(&s.env, &other.address());
+    assert_eq!(s.token.balance(&to), 200);
+    assert_eq!(other_token.balance(&to), 0);
+    assert_eq!(other_token.balance(&s.vault_id), 500);
+}
