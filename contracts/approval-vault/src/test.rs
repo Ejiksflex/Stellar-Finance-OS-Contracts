@@ -1,7 +1,9 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
+    testutils::{
+        storage::Persistent as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+    },
     token::{StellarAssetClient, TokenClient},
     vec, Address, BytesN, Env, Event as _, IntoVal, Val,
 };
@@ -1372,4 +1374,39 @@ fn cancel_policy_update_rejects_unknown_id() {
         s.try_cancel_policy(&s.approvers[0], &s.approvers[0], 11),
         Err(Some(Error::ProposalNotFound))
     );
+}
+
+// ---------------------------------------------------------------- storage TTL
+
+fn proposal_ttl(s: &Setup, id: u64) -> u32 {
+    s.env.as_contract(&s.vault_id, || {
+        s.env
+            .storage()
+            .persistent()
+            .get_ttl(&crate::storage::DataKey::Proposal(id))
+    })
+}
+
+#[test]
+fn proposal_ttl_is_extended_on_write() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 1);
+    assert!(proposal_ttl(&s, id) >= finance_os_common::ttl::PERSISTENT_LIFETIME_THRESHOLD);
+}
+
+#[test]
+fn proposal_ttl_is_extended_on_access() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 1);
+    let start = proposal_ttl(&s, id);
+
+    // Advance far enough that the remaining TTL drops under the threshold.
+    let step = 2 * finance_os_common::ttl::DAY_IN_LEDGERS;
+    s.env.ledger().with_mut(|l| l.sequence_number += step);
+    assert!(proposal_ttl(&s, id) < finance_os_common::ttl::PERSISTENT_LIFETIME_THRESHOLD);
+
+    s.vault.get_proposal(&id);
+    assert_eq!(proposal_ttl(&s, id), start);
 }
