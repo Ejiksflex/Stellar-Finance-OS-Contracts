@@ -2,6 +2,10 @@
 
 use soroban_sdk::{contracterror, contracttype, Address, BytesN, Vec};
 
+/// Upper bound on approvers. Keeps every loop over the approver set (and the
+/// `Policy` instance entry) within a small, predictable resource budget.
+pub const MAX_APPROVERS: u32 = 20;
+
 /// Who may approve outgoing payments and how many approvals are required.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,4 +55,5 @@ pub enum Error {
     InvalidExpiry = 9,
     ThresholdNotMet = 10,
     ArithmeticOverflow = 11,
+    TooManyApprovers = 12,
 }

@@ -50,3 +50,20 @@ fn constructor_rejects_duplicate_approvers() {
     let a = Address::generate(&env);
     env.register(ApprovalVault, (vec![&env, a.clone(), a], 1u32));
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")] // TooManyApprovers
+fn constructor_rejects_too_many_approvers() {
+    let env = Env::default();
+    let a = approvers(&env, crate::types::MAX_APPROVERS + 1);
+    env.register(ApprovalVault, (a, 1u32));
+}
+
+#[test]
+fn constructor_accepts_max_approvers() {
+    let env = Env::default();
+    let a = approvers(&env, crate::types::MAX_APPROVERS);
+    let id = env.register(ApprovalVault, (a, crate::types::MAX_APPROVERS));
+    let client = ApprovalVaultClient::new(&env, &id);
+    assert_eq!(client.get_policy().threshold, crate::types::MAX_APPROVERS);
+}

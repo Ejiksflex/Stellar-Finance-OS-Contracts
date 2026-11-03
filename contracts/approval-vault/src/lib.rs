@@ -12,7 +12,7 @@ mod test;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
 
-use crate::types::{Error, Policy};
+use crate::types::{Error, Policy, MAX_APPROVERS};
 
 #[contract]
 pub struct ApprovalVault;
@@ -20,7 +20,8 @@ pub struct ApprovalVault;
 #[contractimpl]
 impl ApprovalVault {
     /// Sets the initial policy. Rejects `threshold == 0`,
-    /// `threshold > approvers.len()`, and duplicate approvers.
+    /// `threshold > approvers.len()`, duplicate approvers, and more than
+    /// [`MAX_APPROVERS`] approvers.
     pub fn __constructor(env: Env, approvers: Vec<Address>, threshold: u32) -> Result<(), Error> {
         let policy = validate_policy(approvers, threshold)?;
         storage::set_policy(&env, &policy);
@@ -39,6 +40,9 @@ impl ApprovalVault {
 }
 
 fn validate_policy(approvers: Vec<Address>, threshold: u32) -> Result<Policy, Error> {
+    if approvers.len() > MAX_APPROVERS {
+        return Err(Error::TooManyApprovers);
+    }
     if threshold == 0 || threshold > approvers.len() {
         return Err(Error::InvalidThreshold);
     }
