@@ -18,11 +18,12 @@ Read `README.md` first. The function tables (§3, §4) and security requirements
 - **Amounts:** validate with `finance_os_common::amount::is_positive`, and use `checked_add`/`checked_sub`, mapping `None` to `Error::ArithmeticOverflow`.
 - **Ordering:** `require_auth()` first, then validate and write state, then call the token contract's `transfer`. Emit events last.
 - **TTL:** use `storage::bump_instance` in every entrypoint. Call `ttl::extend_persistent` on every read or write of a proposal or invoice. The strategy is documented in each `storage.rs` and in `packages/common/src/ttl.rs`.
-- **Events:** `#[contractevent]` structs in `events.rs`. The topic is the snake_case struct name followed by the id field marked `#[topic]`.
+- **Events:** `#[contractevent]` structs in `events.rs`. The topic is the snake_case struct name followed by the id field marked `#[topic]`. When adding or changing an event, update `docs/events.md` and the `event_topic_xdr_matches_docs` test together.
 - **Constructor error tests:** `env.register` panics when the constructor returns an error, so assert with `#[should_panic(expected = "Error(Contract, #N)")]`.
 - **Test fixtures:** each `test.rs` has a `Setup` fixture plus `auth(...)` / `try_*` helpers that mock exactly one authorisation, including nested `token.transfer` sub-invokes. Wrong-signer tests sign with a different address and expect `Err(None)` (a host auth failure, not a contract error).
 - **Event assertions:** `env.events().all()` only holds the **latest** invocation's events. Assert on them immediately after the call under test, before any view call.
 - **Approvals:** approval counts are always re-filtered against the *current* policy (`count_valid_approvals`). Don't cache counts in storage.
+- **Property tests:** invariants live in each contract's `proptests.rs`. Add one whenever a rule should hold for *all* inputs, not just the cases you thought of.
 - **Coverage:** `./scripts/coverage.sh`. Keep hand-written contract logic at 100% line coverage, and update `docs/coverage.md` and `docs/threat-model.md` when you add entrypoints.
 - **Wasm builds:** use `stellar contract build` (`./scripts/build.sh`). soroban-sdk ≥ 29 refuses a plain `cargo build --target wasm32v1-none`.
 
