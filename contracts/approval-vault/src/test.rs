@@ -1620,3 +1620,16 @@ fn raising_threshold_blocks_previously_sufficient_proposal() {
     s.approve(&s.approvers[2], pay);
     assert_eq!(s.try_execute(pay), Ok(()));
 }
+
+#[test]
+fn approve_policy_update_rejects_cancelled() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_cancel_policy(&s.approvers[0], &s.approvers[0], id)
+        .unwrap();
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::NotPending))
+    );
+}
