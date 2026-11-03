@@ -1501,3 +1501,19 @@ fn approve_after_execute_is_rejected() {
         Err(Some(Error::NotPending))
     );
 }
+
+#[test]
+fn balances_are_tracked_per_token() {
+    let s = Setup::new();
+    let other_admin = Address::generate(&s.env);
+    let other = s
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let args: soroban_sdk::Vec<Val> = (s.vault_id.clone(), 7i128).into_val(&s.env);
+    auth(&s.env, &other_admin, &other.address(), "mint", args, &[]);
+    StellarAssetClient::new(&s.env, &other.address()).mint(&s.vault_id, &7);
+
+    s.fund_vault(50);
+    assert_eq!(s.vault.balance(&s.token.address), 50);
+    assert_eq!(s.vault.balance(&other.address()), 7);
+}
