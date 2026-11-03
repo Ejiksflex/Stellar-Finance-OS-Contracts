@@ -60,5 +60,6 @@ pub struct Cancelled {
 pub struct PolicyUpdated {
     #[topic]
     pub proposal_id: u64,
+    pub approvers: Vec<Address>,
     pub threshold: u32,
 }

@@ -13,7 +13,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, vec, Address, BytesN, Env, Vec};
 
-use crate::events::{Approved, Cancelled, Executed, PolicyProposed, Proposed};
+use crate::events::{Approved, Cancelled, Executed, PolicyProposed, PolicyUpdated, Proposed};
 use crate::types::{Error, Policy, PolicyProposal, Proposal, ProposalStatus, MAX_APPROVERS};
 
 #[contract]
@@ -231,7 +231,35 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 4): update_policy, cancel_policy_update
+    /// Apply a policy-update proposal once it has at least `threshold`
+    /// approvals from the *current* approver set. Callable by anyone.
+    ///
+    /// Deviation from README §3: the README sketches
+    /// `update_policy(new_approvers, new_threshold)`. Here the new policy comes
+    /// from an approved `PolicyProposal`, so the call takes that proposal's id.
+    pub fn update_policy(env: Env, id: u64) -> Result<(), Error> {
+        storage::bump_instance(&env);
+        let policy = storage::get_policy(&env);
+        let mut proposal = storage::get_policy_proposal(&env, id)?;
+        require_open(&env, proposal.status, proposal.expires_at)?;
+        if count_valid_approvals(&policy, &proposal.approvals) < policy.threshold {
+            return Err(Error::ThresholdNotMet);
+        }
+
+        proposal.status = ProposalStatus::Executed;
+        storage::set_policy_proposal(&env, &proposal);
+        storage::set_policy(&env, &proposal.new_policy);
+
+        PolicyUpdated {
+            proposal_id: id,
+            approvers: proposal.new_policy.approvers,
+            threshold: proposal.new_policy.threshold,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    // TODO(task 4): cancel_policy_update
 
     /// The vault's balance of `token`.
     pub fn balance(env: Env, token: Address) -> i128 {

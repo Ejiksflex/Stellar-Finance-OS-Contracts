@@ -266,6 +266,17 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn try_update_policy(&self, id: u64) -> Result<(), Option<Error>> {
+        self.env.mock_auths(&[]);
+        match self.vault.try_update_policy(&id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -1122,4 +1133,130 @@ fn approve_policy_update_rejects_payment_proposal_id() {
         s.try_approve_policy(&s.approvers[1], &s.approvers[1], id),
         Err(Some(Error::ProposalNotFound))
     );
+}
+
+// ---------------------------------------------------------------- update_policy
+
+#[test]
+fn update_policy_applies_new_policy_and_emits_event() {
+    let s = Setup::new();
+    let new = s.new_approvers(4);
+    let id = s.propose_policy(&s.approvers[0], &new, 3);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+
+    assert_eq!(s.try_update_policy(id), Ok(()));
+    let expected = events::PolicyUpdated {
+        proposal_id: id,
+        approvers: new.clone(),
+        threshold: 3,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+    let policy = s.vault.get_policy();
+    assert_eq!(policy.approvers, new);
+    assert_eq!(policy.threshold, 3);
+    assert_eq!(
+        s.vault.get_policy_proposal(&id).status,
+        ProposalStatus::Executed
+    );
+}
+
+#[test]
+fn update_policy_rejects_threshold_not_met() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(s.try_update_policy(id), Err(Some(Error::ThresholdNotMet)));
+    assert_eq!(s.vault.get_policy().threshold, 2);
+}
+
+#[test]
+fn update_policy_rejects_expired() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+    s.env.ledger().set_timestamp(NOW + TTL);
+    assert_eq!(s.try_update_policy(id), Err(Some(Error::Expired)));
+}
+
+#[test]
+fn update_policy_rejects_double_apply() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+    s.try_update_policy(id).unwrap();
+    assert_eq!(s.try_update_policy(id), Err(Some(Error::NotPending)));
+}
+
+#[test]
+fn update_policy_rejects_unknown_id() {
+    let s = Setup::new();
+    assert_eq!(s.try_update_policy(3), Err(Some(Error::ProposalNotFound)));
+}
+
+#[test]
+fn removed_approvers_lose_power_after_update() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 2);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+    s.try_update_policy(id).unwrap();
+
+    let to = Address::generate(&s.env);
+    assert_eq!(
+        s.try_propose(&s.approvers[0], &s.approvers[0], &to, 1, NOW + TTL),
+        Err(Some(Error::NotApprover))
+    );
+    // New approvers can act.
+    let n0 = new.get(0).unwrap();
+    s.propose(&n0, &to, 1);
+}
+
+#[test]
+fn stale_approvals_do_not_count_after_policy_change() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    // Payment proposal approved by two old approvers (meets old threshold 2).
+    let pay = s.propose(&s.approvers[0], &to, 500);
+    s.approve(&s.approvers[1], pay);
+
+    // Replace the approver set entirely before executing.
+    let new = s.new_approvers(2);
+    let pol = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], pol)
+        .unwrap();
+    s.try_update_policy(pol).unwrap();
+
+    // The old approvals no longer count, so execute fails.
+    assert_eq!(s.try_execute(pay), Err(Some(Error::ThresholdNotMet)));
+    assert_eq!(s.token.balance(&s.vault_id), 1_000);
+}
+
+#[test]
+fn competing_policy_proposal_needs_approvals_from_new_set() {
+    let s = Setup::new();
+    let set_a = s.new_approvers(2);
+    let set_b = s.new_approvers(2);
+    let a = s.propose_policy(&s.approvers[0], &set_a, 1);
+    let b = s.propose_policy(&s.approvers[1], &set_b, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], a)
+        .unwrap();
+    s.try_approve_policy(&s.approvers[2], &s.approvers[2], b)
+        .unwrap();
+    s.try_update_policy(a).unwrap();
+    // b was approved by the old set only; under set_a (threshold 1) it has 0.
+    assert_eq!(s.try_update_policy(b), Err(Some(Error::ThresholdNotMet)));
 }
