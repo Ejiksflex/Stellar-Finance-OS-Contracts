@@ -1,3 +1,7 @@
+// Tests may use plain arithmetic and unwrap; the workspace lints target
+// contract code (README §5).
+#![allow(clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::panic)]
+
 extern crate std;
 
 use soroban_sdk::{

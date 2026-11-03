@@ -309,10 +309,12 @@ fn validate_policy(approvers: Vec<Address>, threshold: u32) -> Result<Policy, Er
     if threshold == 0 || threshold > approvers.len() {
         return Err(Error::InvalidThreshold);
     }
-    for (i, a) in approvers.iter().enumerate() {
-        if approvers.iter().skip(i + 1).any(|b| b == a) {
+    let mut seen = Vec::new(approvers.env());
+    for a in approvers.iter() {
+        if seen.contains(&a) {
             return Err(Error::DuplicateApprover);
         }
+        seen.push_back(a);
     }
     Ok(Policy {
         approvers,
@@ -350,8 +352,9 @@ fn require_future(env: &Env, expires_at: u64) -> Result<(), Error> {
 /// Approvals that still count: only addresses in the current policy. If the
 /// policy changes while a proposal is pending, removed approvers' votes drop out.
 fn count_valid_approvals(policy: &Policy, approvals: &Vec<Address>) -> u32 {
+    // Bounded by MAX_APPROVERS, so saturation can never actually kick in.
     approvals
         .iter()
         .filter(|a| policy.approvers.contains(a))
-        .count() as u32
+        .fold(0u32, |n, _| n.saturating_add(1))
 }
