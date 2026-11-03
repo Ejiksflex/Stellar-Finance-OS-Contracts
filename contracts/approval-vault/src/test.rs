@@ -1712,3 +1712,14 @@ fn deposit_requires_depositor_auth_for_vault_and_token_transfer() {
         )
     );
 }
+
+#[test]
+fn execute_requires_no_auth() {
+    let s = Setup::new();
+    s.fund_vault(10);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+    assert_eq!(s.env.auths(), std::vec![]);
+}
