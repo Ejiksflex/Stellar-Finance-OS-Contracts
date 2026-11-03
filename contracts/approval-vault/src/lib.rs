@@ -259,7 +259,26 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 4): cancel_policy_update
+    /// Cancel a Pending policy-update proposal. Any current approver may cancel.
+    pub fn cancel_policy_update(env: Env, caller: Address, id: u64) -> Result<(), Error> {
+        caller.require_auth();
+        storage::bump_instance(&env);
+        require_approver(&storage::get_policy(&env), &caller)?;
+
+        let mut proposal = storage::get_policy_proposal(&env, id)?;
+        if proposal.status != ProposalStatus::Pending {
+            return Err(Error::NotPending);
+        }
+        proposal.status = ProposalStatus::Cancelled;
+        storage::set_policy_proposal(&env, &proposal);
+
+        Cancelled {
+            proposal_id: id,
+            cancelled_by: caller,
+        }
+        .publish(&env);
+        Ok(())
+    }
 
     /// The vault's balance of `token`.
     pub fn balance(env: Env, token: Address) -> i128 {

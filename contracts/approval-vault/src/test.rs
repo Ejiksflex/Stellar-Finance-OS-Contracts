@@ -277,6 +277,30 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn try_cancel_policy(
+        &self,
+        signer: &Address,
+        caller: &Address,
+        id: u64,
+    ) -> Result<(), Option<Error>> {
+        let args = (caller.clone(), id).into_val(&self.env);
+        auth(
+            &self.env,
+            signer,
+            &self.vault_id,
+            "cancel_policy_update",
+            args,
+            &[],
+        );
+        match self.vault.try_cancel_policy_update(caller, &id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -1259,4 +1283,93 @@ fn competing_policy_proposal_needs_approvals_from_new_set() {
     s.try_update_policy(a).unwrap();
     // b was approved by the old set only; under set_a (threshold 1) it has 0.
     assert_eq!(s.try_update_policy(b), Err(Some(Error::ThresholdNotMet)));
+}
+
+// ---------------------------------------------------------------- cancel_policy_update
+
+#[test]
+fn cancel_policy_update_marks_cancelled_and_emits_event() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_cancel_policy(&s.approvers[1], &s.approvers[1], id),
+        Ok(())
+    );
+    let expected = events::Cancelled {
+        proposal_id: id,
+        cancelled_by: s.approvers[1].clone(),
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+    assert_eq!(
+        s.vault.get_policy_proposal(&id).status,
+        ProposalStatus::Cancelled
+    );
+}
+
+#[test]
+fn cancel_policy_update_blocks_apply() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+    s.try_cancel_policy(&s.approvers[2], &s.approvers[2], id)
+        .unwrap();
+    assert_eq!(s.try_update_policy(id), Err(Some(Error::NotPending)));
+}
+
+#[test]
+fn cancel_policy_update_rejects_non_approver() {
+    let s = Setup::new();
+    let outsider = Address::generate(&s.env);
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_cancel_policy(&outsider, &outsider, id),
+        Err(Some(Error::NotApprover))
+    );
+}
+
+#[test]
+fn cancel_policy_update_rejects_wrong_signer() {
+    let s = Setup::new();
+    let outsider = Address::generate(&s.env);
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_cancel_policy(&outsider, &s.approvers[0], id),
+        Err(None)
+    );
+}
+
+#[test]
+fn cancel_policy_update_rejects_applied_proposal() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], id)
+        .unwrap();
+    s.try_update_policy(id).unwrap();
+    let n0 = new.get(0).unwrap();
+    assert_eq!(
+        s.try_cancel_policy(&n0, &n0, id),
+        Err(Some(Error::NotPending))
+    );
+}
+
+#[test]
+fn cancel_policy_update_rejects_unknown_id() {
+    let s = Setup::new();
+    assert_eq!(
+        s.try_cancel_policy(&s.approvers[0], &s.approvers[0], 11),
+        Err(Some(Error::ProposalNotFound))
+    );
 }
