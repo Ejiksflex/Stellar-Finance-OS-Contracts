@@ -14,7 +14,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
-use crate::events::{Paid, Registered};
+use crate::events::{Paid, Registered, Voided};
 use crate::types::{Error, Invoice, InvoiceStatus};
 
 #[contract]
@@ -110,7 +110,27 @@ impl InvoiceRegistry {
         Ok(())
     }
 
-    // TODO(task 5): void
+    /// Void an Open invoice that has received no payments. Only the
+    /// invoice's own business may void it.
+    pub fn void(env: Env, business: Address, id: BytesN<32>) -> Result<(), Error> {
+        business.require_auth();
+        storage::bump_instance(&env);
+        let mut invoice = storage::get_invoice(&env, &id).ok_or(Error::InvoiceNotFound)?;
+        if invoice.business != business {
+            return Err(Error::NotBusiness);
+        }
+        if invoice.status != InvoiceStatus::Open {
+            return Err(Error::NotOpen);
+        }
+        if invoice.paid != 0 {
+            return Err(Error::AlreadyPaid);
+        }
+        invoice.status = InvoiceStatus::Void;
+        storage::set_invoice(&env, &invoice);
+
+        Voided { id }.publish(&env);
+        Ok(())
+    }
 
     pub fn get(env: Env, id: BytesN<32>) -> Result<Invoice, Error> {
         storage::bump_instance(&env);

@@ -95,6 +95,21 @@ impl Setup<'_> {
         self.try_pay(payer, payer, id, amount).expect("pay ok");
     }
 
+    fn try_void(
+        &self,
+        signer: &Address,
+        business: &Address,
+        id: &BytesN<32>,
+    ) -> Result<(), Option<Error>> {
+        let args = (business.clone(), id.clone()).into_val(&self.env);
+        auth(&self.env, signer, &self.registry_id, "void", args, &[]);
+        match self.registry.try_void(business, id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+
     fn try_register(
         &self,
         signer: &Address,
@@ -462,5 +477,103 @@ fn pay_rejects_overflowing_total() {
     assert_eq!(
         s.try_pay(&payer, &payer, &id, i128::MAX),
         Err(Some(Error::ArithmeticOverflow))
+    );
+}
+
+// ---------------------------------------------------------------- void
+
+#[test]
+fn void_marks_void_and_emits_event() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    assert_eq!(s.try_void(&s.business, &s.business, &id), Ok(()));
+    let expected = events::Voided { id: id.clone() };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.registry_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.registry_id)]
+    );
+    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Void);
+}
+
+#[test]
+fn void_blocks_payment() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    s.try_void(&s.business, &s.business, &id).unwrap();
+    let payer = s.payer(1_000);
+    assert_eq!(
+        s.try_pay(&payer, &payer, &id, 100),
+        Err(Some(Error::NotOpen))
+    );
+    assert_eq!(s.token.balance(&payer), 1_000);
+}
+
+#[test]
+fn void_rejects_after_partial_payment() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let payer = s.payer(1_000);
+    s.pay(&payer, &id, 1);
+    assert_eq!(
+        s.try_void(&s.business, &s.business, &id),
+        Err(Some(Error::AlreadyPaid))
+    );
+    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+}
+
+#[test]
+fn void_rejects_paid_invoice() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let payer = s.payer(1_000);
+    s.pay(&payer, &id, 500);
+    assert_eq!(
+        s.try_void(&s.business, &s.business, &id),
+        Err(Some(Error::NotOpen))
+    );
+}
+
+#[test]
+fn void_rejects_already_void() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    s.try_void(&s.business, &s.business, &id).unwrap();
+    assert_eq!(
+        s.try_void(&s.business, &s.business, &id),
+        Err(Some(Error::NotOpen))
+    );
+}
+
+#[test]
+fn void_rejects_other_business() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let other = Address::generate(&s.env);
+    assert_eq!(
+        s.try_void(&other, &other, &id),
+        Err(Some(Error::NotBusiness))
+    );
+    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+}
+
+#[test]
+fn void_rejects_wrong_signer() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let attacker = Address::generate(&s.env);
+    assert_eq!(s.try_void(&attacker, &s.business, &id), Err(None));
+    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+}
+
+#[test]
+fn void_rejects_unknown_invoice() {
+    let s = Setup::new();
+    assert_eq!(
+        s.try_void(&s.business, &s.business, &s.hash(4)),
+        Err(Some(Error::InvoiceNotFound))
     );
 }
