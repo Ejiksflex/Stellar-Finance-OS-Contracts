@@ -36,3 +36,19 @@ jobs:
         with:
           name: wasm
           path: target/wasm32v1-none/release/*.wasm
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: coverage
+        run: ./scripts/coverage.sh --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: target/llvm-cov/html
