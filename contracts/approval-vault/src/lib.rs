@@ -10,7 +10,8 @@ pub mod types;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+use finance_os_common::amount;
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 
 use crate::types::{Error, Policy, MAX_APPROVERS};
 
@@ -29,7 +30,24 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 2): deposit
+    /// Transfer `amount` of `token` from `from` into the vault.
+    ///
+    /// Anyone may deposit. `token` must be a contract implementing the standard
+    /// token interface (e.g. a Stellar Asset Contract).
+    pub fn deposit(env: Env, from: Address, token: Address, amount: i128) -> Result<(), Error> {
+        from.require_auth();
+        if !amount::is_positive(amount) {
+            return Err(Error::InvalidAmount);
+        }
+        storage::bump_instance(&env);
+        token::TokenClient::new(&env, &token).transfer(
+            &from,
+            env.current_contract_address(),
+            &amount,
+        );
+        Ok(())
+    }
+
     // TODO(task 3): propose, approve, execute, cancel, get_proposal, balance
     // TODO(task 4): policy update via threshold-approved proposal
 

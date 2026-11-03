@@ -1,8 +1,128 @@
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, vec, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    token::{StellarAssetClient, TokenClient},
+    vec, Address, Env, IntoVal, Val,
+};
 
 use crate::{ApprovalVault, ApprovalVaultClient};
+
+/// Test fixture: a vault with 3 approvers, threshold 2, and a SAC token.
+///
+/// Auth is mocked explicitly per call (AGENTS.md rule 2) via [`auth`] and
+/// [`token_transfer_auth`], never with `mock_all_auths`.
+#[allow(dead_code)]
+struct Setup<'a> {
+    env: Env,
+    vault_id: Address,
+    vault: ApprovalVaultClient<'a>,
+    approvers: [Address; 3],
+    token: TokenClient<'a>,
+    token_admin: Address,
+}
+
+impl Setup<'_> {
+    fn new() -> Self {
+        let env = Env::default();
+        let approvers = [
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+        ];
+        let vault_id = env.register(
+            ApprovalVault,
+            (
+                vec![
+                    &env,
+                    approvers[0].clone(),
+                    approvers[1].clone(),
+                    approvers[2].clone(),
+                ],
+                2u32,
+            ),
+        );
+        let vault = ApprovalVaultClient::new(&env, &vault_id);
+        let token_admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token = TokenClient::new(&env, &sac.address());
+        Setup {
+            env,
+            vault_id,
+            vault,
+            approvers,
+            token,
+            token_admin,
+        }
+    }
+
+    /// Mint `amount` of the test token to `to`, authorising only the admin.
+    fn mint(&self, to: &Address, amount: i128) {
+        let args: soroban_sdk::Vec<Val> = (to.clone(), amount).into_val(&self.env);
+        self.env.mock_auths(&[MockAuth {
+            address: &self.token_admin,
+            invoke: &MockAuthInvoke {
+                contract: &self.token.address,
+                fn_name: "mint",
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+        StellarAssetClient::new(&self.env, &self.token.address).mint(to, &amount);
+    }
+
+    /// Mint to a fresh account and deposit it into the vault.
+    fn fund_vault(&self, amount: i128) {
+        let from = Address::generate(&self.env);
+        self.mint(&from, amount);
+        let args = (from.clone(), self.token.address.clone(), amount).into_val(&self.env);
+        let sub = [token_transfer_auth(
+            &self.env,
+            &self.token.address,
+            &from,
+            &self.vault_id,
+            amount,
+        )];
+        auth(&self.env, &from, &self.vault_id, "deposit", args, &sub);
+        self.vault.deposit(&from, &self.token.address, &amount);
+    }
+}
+
+/// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
+fn auth(
+    env: &Env,
+    signer: &Address,
+    contract: &Address,
+    fn_name: &str,
+    args: soroban_sdk::Vec<Val>,
+    sub_invokes: &[MockAuthInvoke],
+) {
+    env.mock_auths(&[MockAuth {
+        address: signer,
+        invoke: &MockAuthInvoke {
+            contract,
+            fn_name,
+            args,
+            sub_invokes,
+        },
+    }]);
+}
+
+/// The nested `token.transfer(from, to, amount)` authorisation.
+fn token_transfer_auth<'a>(
+    env: &Env,
+    token: &'a Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) -> MockAuthInvoke<'a> {
+    MockAuthInvoke {
+        contract: token,
+        fn_name: "transfer",
+        args: (from.clone(), to.clone(), amount).into_val(env),
+        sub_invokes: &[],
+    }
+}
 
 fn approvers(env: &Env, n: u32) -> soroban_sdk::Vec<Address> {
     let mut v = soroban_sdk::Vec::new(env);
@@ -66,4 +186,13 @@ fn constructor_accepts_max_approvers() {
     let id = env.register(ApprovalVault, (a, crate::types::MAX_APPROVERS));
     let client = ApprovalVaultClient::new(&env, &id);
     assert_eq!(client.get_policy().threshold, crate::types::MAX_APPROVERS);
+}
+
+// ---------------------------------------------------------------- deposit
+
+#[test]
+fn deposit_moves_tokens_into_vault() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    assert_eq!(s.token.balance(&s.vault_id), 1_000);
 }
