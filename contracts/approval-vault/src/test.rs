@@ -1596,3 +1596,27 @@ fn retained_approvers_keep_pending_approvals_after_policy_update() {
 
     assert_eq!(s.try_execute(pay), Ok(()));
 }
+
+#[test]
+fn raising_threshold_blocks_previously_sufficient_proposal() {
+    let s = Setup::new();
+    s.fund_vault(100);
+    let to = Address::generate(&s.env);
+    let pay = s.propose(&s.approvers[0], &to, 100);
+    s.approve(&s.approvers[1], pay);
+
+    let same = vec![
+        &s.env,
+        s.approvers[0].clone(),
+        s.approvers[1].clone(),
+        s.approvers[2].clone(),
+    ];
+    let pol = s.propose_policy(&s.approvers[0], &same, 3);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], pol)
+        .unwrap();
+    s.try_update_policy(pol).unwrap();
+
+    assert_eq!(s.try_execute(pay), Err(Some(Error::ThresholdNotMet)));
+    s.approve(&s.approvers[2], pay);
+    assert_eq!(s.try_execute(pay), Ok(()));
+}
