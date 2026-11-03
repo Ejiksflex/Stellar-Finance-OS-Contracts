@@ -363,7 +363,7 @@ VAULT_THRESHOLD=2 \
 
 `deploy.sh` validates the approver list and threshold before spending fees, uploads both Wasm files, deploys, and writes `deployments/testnet.json`. The file format is described in [`deployments/README.md`](deployments/README.md).
 
-For a full hands-on walkthrough of every flow on testnet, see [`docs/testnet-runbook.md`](docs/testnet-runbook.md).
+For a full hands-on walkthrough of every flow on testnet, see [`docs/testnet-runbook.md`](docs/testnet-runbook.md). To prove a deployed contract was built from a given commit, see [`docs/verifying-builds.md`](docs/verifying-builds.md).
 
 ---
 
