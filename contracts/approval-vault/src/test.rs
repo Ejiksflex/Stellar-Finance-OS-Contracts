@@ -1642,3 +1642,46 @@ fn get_policy_proposal_rejects_unknown_id() {
         Err(Ok(Error::ProposalNotFound))
     );
 }
+
+// ---------------------------------------------------------------- recorded auth trees
+
+fn contract_call(
+    env: &Env,
+    contract: &Address,
+    fn_name: &str,
+    args: soroban_sdk::Vec<Val>,
+    subs: std::vec::Vec<soroban_sdk::testutils::AuthorizedInvocation>,
+) -> soroban_sdk::testutils::AuthorizedInvocation {
+    soroban_sdk::testutils::AuthorizedInvocation {
+        function: soroban_sdk::testutils::AuthorizedFunction::Contract((
+            contract.clone(),
+            soroban_sdk::Symbol::new(env, fn_name),
+            args,
+        )),
+        sub_invocations: subs,
+    }
+}
+
+#[test]
+fn propose_requires_exactly_the_proposers_auth() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    let args = (
+        s.approvers[0].clone(),
+        s.token.address.clone(),
+        to,
+        10i128,
+        s.memo(1),
+        NOW + TTL,
+    )
+        .into_val(&s.env);
+    assert_eq!(id, 0);
+    assert_eq!(
+        s.env.auths(),
+        std::vec![(
+            s.approvers[0].clone(),
+            contract_call(&s.env, &s.vault_id, "propose", args, std::vec![])
+        )]
+    );
+}
