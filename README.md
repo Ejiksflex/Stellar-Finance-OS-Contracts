@@ -398,6 +398,8 @@ Releases are tagged with semver. **Changing an event shape, a function signature
 - Wrong-signer tests sign with a different address and expect a host auth failure.
 - `env.events().all()` only holds the latest call's events, so assert on events right after the call under test.
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR process and what counts as a breaking change, and [`SECURITY.md`](SECURITY.md) to report a vulnerability privately.
+
 ### Working with AI agents
 
 Read [`AGENTS.md`](AGENTS.md) first. It has the rules (tests for every failure path, no secrets, testnet only, run the gate before declaring done) and the repo's conventions. Prompt template:
