@@ -14,14 +14,19 @@ You can scaffold this repo now and build it in parallel, but don't block the MVP
 
 ### Current status
 
-Build-order task 1 (scaffold) is done. See [§8](#build-order).
+| # | Task | State |
+|---|---|---|
+| 1 | Scaffold, `common` crate, scripts, CI | ✅ |
+| 2 | `approval-vault`: types, storage, constructor, deposit | ✅ |
+| 3 | `approval-vault`: propose/approve/execute/cancel + events | ✅ |
+| 4 | `approval-vault`: policy update via threshold | ✅ |
+| 5 | `invoice-registry`: register/pay/void + events | ✅ |
+| 6 | Deploy scripts + `deployments/testnet.json` | Scripts and the **Deploy (testnet)** workflow are ready. Not yet run, so `deployments/testnet.json` is still empty |
+| 7 | TS bindings generation | `scripts/bindings.sh` is ready and runs as part of the deploy workflow. Not yet generated |
+| 8 | Backend indexer integration | backend repo |
+| 9 | Audit prep | [`docs/threat-model.md`](docs/threat-model.md), [`docs/coverage.md`](docs/coverage.md) |
 
-| Piece | State |
-|---|---|
-| Workspace, `common` crate, scripts, CI | ✅ |
-| `approval-vault` | types, storage, events defined; `__constructor` + `get_policy` implemented and tested. Rest is tasks 2–4 |
-| `invoice-registry` | types, storage, events defined; `get` implemented and tested. Rest is task 5 |
-| Testnet deployment, bindings | not yet (tasks 6–7) |
+116 tests. Contract logic has 100% line coverage.
 
 ---
 
@@ -193,8 +198,11 @@ These are acceptance criteria, not suggestions:
 # build all contracts
 stellar contract build        # or ./scripts/build.sh
 
-# test
-cargo test
+# test (same gate CI runs: fmt, clippy -D warnings, test)
+./scripts/check.sh
+
+# coverage report (needs cargo-llvm-cov)
+./scripts/coverage.sh
 
 # deploy to testnet (script wraps `stellar contract deploy` and writes deployments/testnet.json)
 STELLAR_ACCOUNT=finance-os-deployer \
@@ -205,7 +213,9 @@ VAULT_APPROVERS='["G...","G..."]' VAULT_THRESHOLD=2 \
 ./scripts/bindings.sh     # wraps `stellar contract bindings typescript`
 ```
 
-Create and fund a testnet identity with the Stellar CLI (`stellar keys generate ... --fund`) — verify flags against current CLI help. Never commit identity files.
+Create and fund a testnet identity with the Stellar CLI (`stellar keys generate <name> --network testnet --fund`). Never commit identity files.
+
+**Deploying from GitHub instead:** go to Actions → **Deploy (testnet)** → *Run workflow*, and give the approver addresses and threshold. The workflow tests, builds, deploys with a throwaway Friendbot-funded deployer, smoke-tests `get_policy`, regenerates `bindings/`, and opens a PR with the new `deployments/testnet.json`. You don't need a local Stellar CLI.
 
 `deploy.sh mainnet` refuses to run unless `FINANCE_OS_MAINNET_AUDITED=yes` is set (§5).
 
