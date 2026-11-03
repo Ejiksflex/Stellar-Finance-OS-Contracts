@@ -6,7 +6,7 @@ use soroban_sdk::{
     vec, Address, Env, IntoVal, Val,
 };
 
-use crate::{ApprovalVault, ApprovalVaultClient};
+use crate::{types::Error, ApprovalVault, ApprovalVaultClient};
 
 /// Test fixture: a vault with 3 approvers, threshold 2, and a SAC token.
 ///
@@ -195,4 +195,65 @@ fn deposit_moves_tokens_into_vault() {
     let s = Setup::new();
     s.fund_vault(1_000);
     assert_eq!(s.token.balance(&s.vault_id), 1_000);
+}
+
+#[test]
+fn deposit_rejects_zero_amount() {
+    let s = Setup::new();
+    let from = Address::generate(&s.env);
+    let args = (from.clone(), s.token.address.clone(), 0i128).into_val(&s.env);
+    auth(&s.env, &from, &s.vault_id, "deposit", args, &[]);
+    let res = s.vault.try_deposit(&from, &s.token.address, &0);
+    assert_eq!(res, Err(Ok(Error::InvalidAmount)));
+}
+
+#[test]
+fn deposit_rejects_negative_amount() {
+    let s = Setup::new();
+    let from = Address::generate(&s.env);
+    let args = (from.clone(), s.token.address.clone(), -5i128).into_val(&s.env);
+    auth(&s.env, &from, &s.vault_id, "deposit", args, &[]);
+    let res = s.vault.try_deposit(&from, &s.token.address, &-5);
+    assert_eq!(res, Err(Ok(Error::InvalidAmount)));
+}
+
+#[test]
+fn deposit_rejects_wrong_signer() {
+    let s = Setup::new();
+    let from = Address::generate(&s.env);
+    let attacker = Address::generate(&s.env);
+    s.mint(&from, 100);
+    let args = (from.clone(), s.token.address.clone(), 100i128).into_val(&s.env);
+    auth(&s.env, &attacker, &s.vault_id, "deposit", args, &[]);
+    assert!(s.vault.try_deposit(&from, &s.token.address, &100).is_err());
+    assert_eq!(s.token.balance(&from), 100);
+    assert_eq!(s.token.balance(&s.vault_id), 0);
+}
+
+#[test]
+fn deposit_rejects_unknown_token() {
+    let s = Setup::new();
+    let from = Address::generate(&s.env);
+    let not_a_token = Address::generate(&s.env);
+    let args = (from.clone(), not_a_token.clone(), 100i128).into_val(&s.env);
+    auth(&s.env, &from, &s.vault_id, "deposit", args, &[]);
+    assert!(s.vault.try_deposit(&from, &not_a_token, &100).is_err());
+}
+
+#[test]
+fn deposit_fails_with_insufficient_funds() {
+    let s = Setup::new();
+    let from = Address::generate(&s.env);
+    s.mint(&from, 50);
+    let args = (from.clone(), s.token.address.clone(), 100i128).into_val(&s.env);
+    let sub = [token_transfer_auth(
+        &s.env,
+        &s.token.address,
+        &from,
+        &s.vault_id,
+        100,
+    )];
+    auth(&s.env, &from, &s.vault_id, "deposit", args, &sub);
+    assert!(s.vault.try_deposit(&from, &s.token.address, &100).is_err());
+    assert_eq!(s.token.balance(&from), 50);
 }
