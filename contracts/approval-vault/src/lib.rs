@@ -8,6 +8,8 @@ mod storage;
 pub mod types;
 
 #[cfg(test)]
+mod proptests;
+#[cfg(test)]
 mod test;
 
 use finance_os_common::amount;

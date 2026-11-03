@@ -34,6 +34,7 @@ name = "approval-vault"
 version = "0.1.0"
 dependencies = [
  "finance-os-common",
+ "proptest",
  "soroban-sdk",
 ]
 
