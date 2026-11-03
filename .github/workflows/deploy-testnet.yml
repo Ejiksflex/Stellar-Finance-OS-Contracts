@@ -1,0 +1,90 @@
+name: Deploy (testnet)
+
+# Manually triggered. Builds both contracts, deploys them to testnet with a
+# throwaway Friendbot-funded deployer, regenerates TS bindings, and opens a PR
+# with the updated deployments/testnet.json + bindings/.
+#
+# The deployer key has no privileges over the contracts (there is no admin;
+# vault control is the approver set passed in below), so it is generated per
+# run and never stored.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approvers:
+        description: 'Vault approvers as a JSON array of G... addresses, e.g. ["GA...","GB..."]'
+        required: true
+      threshold:
+        description: "Vault approval threshold (1..number of approvers)"
+        required: true
+        default: "2"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-testnet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+      - uses: stellar/stellar-cli@v28.1.0
+
+      - name: Test
+        run: cargo test
+
+      - name: Build
+        run: ./scripts/build.sh
+
+      - name: Create throwaway deployer
+        run: stellar keys generate deployer --network testnet --fund
+
+      - name: Deploy
+        env:
+          STELLAR_ACCOUNT: deployer
+          SKIP_BUILD: "1"
+          VAULT_APPROVERS: ${{ inputs.approvers }}
+          VAULT_THRESHOLD: ${{ inputs.threshold }}
+        run: ./scripts/deploy.sh testnet
+
+      - name: Smoke test
+        run: |
+          VAULT=$(jq -r .approvalVault deployments/testnet.json)
+          REGISTRY=$(jq -r .invoiceRegistry deployments/testnet.json)
+          stellar contract invoke --id "$VAULT" --source-account deployer --network testnet --send=no -- get_policy
+          stellar contract info interface --id "$REGISTRY" --network testnet >/dev/null
+
+      - name: Generate bindings
+        env:
+          SKIP_BUILD: "1"
+        run: ./scripts/bindings.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: testnet-deployment
+          path: |
+            deployments/testnet.json
+            bindings/
+
+      - name: Open PR with deployment record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="deploy/testnet-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add deployments/testnet.json bindings/
+          git commit -m "deploy: testnet $(jq -r .version deployments/testnet.json)"
+          git push origin "$branch"
+          gh pr create --base "${GITHUB_REF_NAME}" --head "$branch" \
+            --title "Testnet deployment ${GITHUB_RUN_ID}" \
+            --body "Automated testnet deployment from run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
