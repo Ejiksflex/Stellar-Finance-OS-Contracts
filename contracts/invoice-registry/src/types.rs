@@ -41,4 +41,6 @@ pub enum Error {
     Overpayment = 5,
     AlreadyPaid = 6,
     ArithmeticOverflow = 7,
+    InvalidToken = 8,
+    NotBusiness = 9,
 }

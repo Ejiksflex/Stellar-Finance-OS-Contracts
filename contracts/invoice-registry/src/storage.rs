@@ -31,3 +31,15 @@ pub fn get_invoice(env: &Env, id: &BytesN<32>) -> Option<Invoice> {
     }
     invoice
 }
+
+pub fn has_invoice(env: &Env, id: &BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Invoice(id.clone()))
+}
+
+pub fn set_invoice(env: &Env, invoice: &Invoice) {
+    let key = DataKey::Invoice(invoice.id.clone());
+    env.storage().persistent().set(&key, invoice);
+    ttl::extend_persistent(env, &key);
+}
