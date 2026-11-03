@@ -390,6 +390,7 @@ Releases are tagged with semver. **Changing an event shape, a function signature
 | `./scripts/coverage.sh [--html]` | Coverage report (excludes test modules) |
 | `./scripts/deploy.sh testnet` | Deploys and writes `deployments/testnet.json` |
 | `./scripts/bindings.sh` | Regenerates `bindings/` |
+| `./scripts/verify-deployment.sh testnet` | Checks the on-chain Wasm hashes against the deployment record and local build |
 
 **CI** (`.github/workflows/ci.yml`) runs on every push and PR: the check gate, a `stellar contract build` with a 64 KiB size limit, a coverage job (HTML report as an artifact), and `cargo audit`. Pushing a `vX.Y.Z` tag runs **Release**, which publishes both Wasm files with `SHA256SUMS`.
 
