@@ -1,7 +1,9 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, Events as _, MockAuth, MockAuthInvoke},
+    testutils::{
+        storage::Persistent as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+    },
     token::{StellarAssetClient, TokenClient},
     Address, BytesN, Env, Event as _, IntoVal, Val,
 };
@@ -576,4 +578,34 @@ fn void_rejects_unknown_invoice() {
         s.try_void(&s.business, &s.business, &s.hash(4)),
         Err(Some(Error::InvoiceNotFound))
     );
+}
+
+// ---------------------------------------------------------------- storage TTL
+
+fn invoice_ttl(s: &Setup, id: &BytesN<32>) -> u32 {
+    s.env.as_contract(&s.registry_id, || {
+        s.env
+            .storage()
+            .persistent()
+            .get_ttl(&crate::storage::DataKey::Invoice(id.clone()))
+    })
+}
+
+#[test]
+fn invoice_ttl_is_extended_on_write() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    assert!(invoice_ttl(&s, &id) >= finance_os_common::ttl::PERSISTENT_LIFETIME_THRESHOLD);
+}
+
+#[test]
+fn invoice_ttl_is_extended_on_access() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let start = invoice_ttl(&s, &id);
+    let step = 2 * finance_os_common::ttl::DAY_IN_LEDGERS;
+    s.env.ledger().with_mut(|l| l.sequence_number += step);
+    assert!(invoice_ttl(&s, &id) < finance_os_common::ttl::PERSISTENT_LIFETIME_THRESHOLD);
+    s.registry.get(&id);
+    assert_eq!(invoice_ttl(&s, &id), start);
 }
