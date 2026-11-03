@@ -9,7 +9,7 @@ Read `README.md` first. The function tables (§3, §4) and security requirements
 3. No secret keys, seeds, or identity files committed. The CLI identity directories (`.stellar/`, `.soroban/`) are git-ignored.
 4. Keep contracts minimal — business logic (invoice content, client records, approval comments) stays in the backend.
 5. Don't change event shapes without updating README §3/§4 and bumping the major version.
-6. Run `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` before declaring done.
+6. Run `./scripts/check.sh` (`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`) before declaring done.
 7. Testnet only.
 
 ## Conventions in this repo

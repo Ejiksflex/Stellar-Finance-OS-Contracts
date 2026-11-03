@@ -18,12 +18,8 @@ jobs:
           targets: wasm32v1-none
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: fmt
-        run: cargo fmt --all --check
-      - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: test
-        run: cargo test
+      - name: fmt + clippy + test
+        run: ./scripts/check.sh
 
   build:
     runs-on: ubuntu-latest
