@@ -144,6 +144,28 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn approve(&self, approver: &Address, id: u64) {
+        self.try_approve(approver, approver, id)
+            .expect("approve ok");
+    }
+
+    fn try_approve(
+        &self,
+        signer: &Address,
+        approver: &Address,
+        id: u64,
+    ) -> Result<(), Option<Error>> {
+        let args = (approver.clone(), id).into_val(&self.env);
+        auth(&self.env, signer, &self.vault_id, "approve", args, &[]);
+        match self.vault.try_approve(approver, &id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -432,5 +454,118 @@ fn get_proposal_rejects_unknown_id() {
     assert_eq!(
         s.vault.try_get_proposal(&99),
         Err(Ok(Error::ProposalNotFound))
+    );
+}
+
+// ---------------------------------------------------------------- approve
+
+#[test]
+fn approve_records_approval() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.approve(&s.approvers[1], id);
+    assert_eq!(
+        s.vault.get_proposal(&id).approvals,
+        vec![&s.env, s.approvers[0].clone(), s.approvers[1].clone()]
+    );
+}
+
+#[test]
+fn approve_emits_approved_event() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.approve(&s.approvers[1], id);
+    let expected = events::Approved {
+        proposal_id: id,
+        approver: s.approvers[1].clone(),
+        approvals: 2,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+}
+
+#[test]
+fn approve_rejects_double_approval() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.approve(&s.approvers[1], id);
+    assert_eq!(
+        s.try_approve(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::AlreadyApproved))
+    );
+}
+
+#[test]
+fn approve_rejects_proposer_approving_again() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    assert_eq!(
+        s.try_approve(&s.approvers[0], &s.approvers[0], id),
+        Err(Some(Error::AlreadyApproved))
+    );
+}
+
+#[test]
+fn approve_rejects_non_approver() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let outsider = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    assert_eq!(
+        s.try_approve(&outsider, &outsider, id),
+        Err(Some(Error::NotApprover))
+    );
+}
+
+#[test]
+fn approve_rejects_wrong_signer() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    // approvers[2] tries to cast approvers[1]'s vote.
+    assert_eq!(
+        s.try_approve(&s.approvers[2], &s.approvers[1], id),
+        Err(None)
+    );
+    assert_eq!(s.vault.get_proposal(&id).approvals.len(), 1);
+}
+
+#[test]
+fn approve_rejects_expired_proposal() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.env.ledger().set_timestamp(NOW + TTL);
+    assert_eq!(
+        s.try_approve(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::Expired))
+    );
+}
+
+#[test]
+fn approve_accepts_just_before_expiry() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.env.ledger().set_timestamp(NOW + TTL - 1);
+    s.approve(&s.approvers[1], id);
+}
+
+#[test]
+fn approve_rejects_unknown_proposal() {
+    let s = Setup::new();
+    assert_eq!(
+        s.try_approve(&s.approvers[1], &s.approvers[1], 42),
+        Err(Some(Error::ProposalNotFound))
     );
 }

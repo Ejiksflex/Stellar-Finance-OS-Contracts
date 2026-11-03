@@ -13,7 +13,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, vec, Address, BytesN, Env, Vec};
 
-use crate::events::Proposed;
+use crate::events::{Approved, Proposed};
 use crate::types::{Error, Policy, Proposal, ProposalStatus, MAX_APPROVERS};
 
 #[contract]
@@ -99,7 +99,30 @@ impl ApprovalVault {
         Ok(id)
     }
 
-    // TODO(task 3): approve, execute, cancel
+    /// Add `approver`'s approval to a Pending, unexpired proposal.
+    pub fn approve(env: Env, approver: Address, id: u64) -> Result<(), Error> {
+        approver.require_auth();
+        storage::bump_instance(&env);
+        require_approver(&storage::get_policy(&env), &approver)?;
+
+        let mut proposal = storage::get_proposal(&env, id)?;
+        require_open(&env, &proposal)?;
+        if proposal.approvals.contains(&approver) {
+            return Err(Error::AlreadyApproved);
+        }
+        proposal.approvals.push_back(approver.clone());
+        storage::set_proposal(&env, &proposal);
+
+        Approved {
+            proposal_id: id,
+            approver,
+            approvals: proposal.approvals.len(),
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    // TODO(task 3): execute, cancel
     // TODO(task 4): policy update via threshold-approved proposal
 
     /// The vault's balance of `token`.
@@ -143,4 +166,15 @@ fn require_approver(policy: &Policy, who: &Address) -> Result<(), Error> {
     } else {
         Err(Error::NotApprover)
     }
+}
+
+/// A proposal can be acted on only while Pending and before `expires_at`.
+fn require_open(env: &Env, proposal: &Proposal) -> Result<(), Error> {
+    if proposal.status != ProposalStatus::Pending {
+        return Err(Error::NotPending);
+    }
+    if env.ledger().timestamp() >= proposal.expires_at {
+        return Err(Error::Expired);
+    }
+    Ok(())
 }
