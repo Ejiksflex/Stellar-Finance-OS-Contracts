@@ -1578,3 +1578,21 @@ fn insufficient_balance_proposal_executes_after_top_up() {
     assert_eq!(s.try_execute(id), Ok(()));
     assert_eq!(s.token.balance(&to), 250);
 }
+
+#[test]
+fn retained_approvers_keep_pending_approvals_after_policy_update() {
+    let s = Setup::new();
+    s.fund_vault(100);
+    let to = Address::generate(&s.env);
+    let pay = s.propose(&s.approvers[1], &to, 100);
+    s.approve(&s.approvers[2], pay);
+
+    // Drop approvers[0] only; [1] and [2] stay, threshold stays 2.
+    let new = vec![&s.env, s.approvers[1].clone(), s.approvers[2].clone()];
+    let pol = s.propose_policy(&s.approvers[0], &new, 2);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], pol)
+        .unwrap();
+    s.try_update_policy(pol).unwrap();
+
+    assert_eq!(s.try_execute(pay), Ok(()));
+}
