@@ -397,6 +397,7 @@ Releases are tagged with semver. **Changing an event shape, a function signature
 - Auth is mocked **explicitly per call**. `mock_all_auths()` is only allowed in a test whose name says so, so auth bugs can't hide.
 - Wrong-signer tests sign with a different address and expect a host auth failure.
 - `env.events().all()` only holds the latest call's events, so assert on events right after the call under test.
+- Property tests (`proptests.rs`, via `proptest`) check invariants over random inputs: M-of-N execution, policy validation, and `paid <= amount`.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR process and what counts as a breaking change, and [`SECURITY.md`](SECURITY.md) to report a vulnerability privately.
 
