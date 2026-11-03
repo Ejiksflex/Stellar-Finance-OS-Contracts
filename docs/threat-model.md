@@ -29,11 +29,11 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 |---|---|---|---|
 | V1 | A non-approver proposes, approves or cancels | `require_auth` on the acting address, plus a membership check | `*_rejects_non_approver`, `*_rejects_wrong_signer` |
 | V2 | One approver counts twice | `approvals` holds unique addresses; `AlreadyApproved` | `approve_rejects_double_approval`, `approve_rejects_proposer_approving_again` |
-| V3 | Executing below threshold | `count_valid_approvals >= threshold`, checked in `execute`/`update_policy` | `execute_rejects_threshold_not_met`, `update_policy_rejects_threshold_not_met` |
+| V3 | Executing below threshold | `count_valid_approvals >= threshold`, checked in `execute`/`update_policy` | `execute_rejects_threshold_not_met`, `update_policy_rejects_threshold_not_met`, property test `executes_iff_threshold_met` |
 | V4 | Replay / double execution | Status is set to Executed before the transfer; `NotPending` | `execute_rejects_double_execution`, `update_policy_rejects_double_apply` |
 | V5 | Stale approvals after the approver set changes | Approvals are re-filtered against the *current* policy at execution time and pruned on every approve, so the list stays ≤ `MAX_APPROVERS` | `stale_approvals_do_not_count_after_policy_change`, `competing_policy_proposal_needs_approvals_from_new_set`, `approve_prunes_approvals_from_removed_approvers` |
 | V6 | Executing an old proposal long after intent | `expires_at` must be in the future at creation; approve/execute reject once `now >= expires_at` | `*_rejects_expired`, `propose_rejects_expiry_*` |
-| V7 | Policy bricked (threshold > approvers, empty set) | `validate_policy` on construction and on every policy proposal | `constructor_rejects_*`, `propose_policy_update_rejects_*` |
+| V7 | Policy bricked (threshold > approvers, empty set) | `validate_policy` on construction and on every policy proposal | `constructor_rejects_*`, `propose_policy_update_rejects_*`, property test `policy_validation_matches_spec` |
 | V8 | Unbounded approver set exhausts resource limits | `MAX_APPROVERS = 20` | `constructor_rejects_too_many_approvers` |
 | V9 | Re-entrancy through a malicious token | State is written before the external `transfer`; Soroban also forbids re-entering the same contract | Code review (ordering in `execute`) |
 | V10 | Malicious `token` on a proposal | Approvers approve the full proposal, including `token`. Only vault-held balances of that token can move | `execute_rejects_unknown_token` |
@@ -47,7 +47,7 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | R1 | Registering an invoice for someone else's business | `business.require_auth()` | `register_rejects_wrong_signer` |
 | R2 | Overwriting an existing invoice | `InvoiceExists` on a duplicate id | `register_rejects_duplicate_id*` |
 | R3 | Invoice marked Paid without funds moving | State and transfer happen in one transaction, and a failed transfer reverts everything | `pay_fails_atomically_with_insufficient_funds` |
-| R4 | Overpayment locks extra funds / skews accounting | `Overpayment` once `paid + amount > amount` | `pay_rejects_overpayment_*` |
+| R4 | Overpayment locks extra funds / skews accounting | `Overpayment` once `paid + amount > amount` | `pay_rejects_overpayment_*`, property test `paid_never_exceeds_amount` |
 | R5 | Paying from someone else's account | `payer.require_auth()`; the transfer is from `payer` | `pay_rejects_wrong_signer` |
 | R6 | Voiding a partly paid invoice (hides received funds) | `AlreadyPaid` when `paid != 0` | `void_rejects_after_partial_payment` |
 | R7 | Another business voids my invoice | `NotBusiness` | `void_rejects_other_business` |
