@@ -208,7 +208,30 @@ impl ApprovalVault {
         Ok(id)
     }
 
-    // TODO(task 4): approve_policy_update, update_policy, cancel_policy_update
+    /// Approve a Pending, unexpired policy-update proposal.
+    pub fn approve_policy_update(env: Env, approver: Address, id: u64) -> Result<(), Error> {
+        approver.require_auth();
+        storage::bump_instance(&env);
+        require_approver(&storage::get_policy(&env), &approver)?;
+
+        let mut proposal = storage::get_policy_proposal(&env, id)?;
+        require_open(&env, proposal.status, proposal.expires_at)?;
+        if proposal.approvals.contains(&approver) {
+            return Err(Error::AlreadyApproved);
+        }
+        proposal.approvals.push_back(approver.clone());
+        storage::set_policy_proposal(&env, &proposal);
+
+        Approved {
+            proposal_id: id,
+            approver,
+            approvals: proposal.approvals.len(),
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    // TODO(task 4): update_policy, cancel_policy_update
 
     /// The vault's balance of `token`.
     pub fn balance(env: Env, token: Address) -> i128 {

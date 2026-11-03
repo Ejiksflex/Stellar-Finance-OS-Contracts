@@ -242,6 +242,30 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn try_approve_policy(
+        &self,
+        signer: &Address,
+        approver: &Address,
+        id: u64,
+    ) -> Result<(), Option<Error>> {
+        let args = (approver.clone(), id).into_val(&self.env);
+        auth(
+            &self.env,
+            signer,
+            &self.vault_id,
+            "approve_policy_update",
+            args,
+            &[],
+        );
+        match self.vault.try_approve_policy_update(approver, &id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -1009,5 +1033,93 @@ fn propose_policy_update_rejects_past_expiry() {
     assert_eq!(
         s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 1, NOW),
         Err(Some(Error::InvalidExpiry))
+    );
+}
+
+// ---------------------------------------------------------------- approve_policy_update
+
+#[test]
+fn approve_policy_update_records_approval_and_emits_event() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[2], &s.approvers[2], id),
+        Ok(())
+    );
+    let expected = events::Approved {
+        proposal_id: id,
+        approver: s.approvers[2].clone(),
+        approvals: 2,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+    assert_eq!(
+        s.vault.get_policy_proposal(&id).approvals,
+        vec![&s.env, s.approvers[0].clone(), s.approvers[2].clone()]
+    );
+}
+
+#[test]
+fn approve_policy_update_rejects_double_approval() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[0], &s.approvers[0], id),
+        Err(Some(Error::AlreadyApproved))
+    );
+}
+
+#[test]
+fn approve_policy_update_rejects_non_approver() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    // Being in the *proposed* set does not let you approve.
+    let incoming = new.get(0).unwrap();
+    assert_eq!(
+        s.try_approve_policy(&incoming, &incoming, id),
+        Err(Some(Error::NotApprover))
+    );
+}
+
+#[test]
+fn approve_policy_update_rejects_wrong_signer() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[2], &s.approvers[1], id),
+        Err(None)
+    );
+}
+
+#[test]
+fn approve_policy_update_rejects_expired() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[0], &new, 1);
+    s.env.ledger().set_timestamp(NOW + TTL);
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::Expired))
+    );
+}
+
+#[test]
+fn approve_policy_update_rejects_payment_proposal_id() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 1);
+    assert_eq!(
+        s.try_approve_policy(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::ProposalNotFound))
     );
 }
