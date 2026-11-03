@@ -627,3 +627,14 @@ fn invoices_are_independent() {
     let inv_b = s.registry.get(&b);
     assert_eq!((inv_b.paid, inv_b.status), (0, InvoiceStatus::Open));
 }
+
+#[test]
+fn voiding_one_invoice_leaves_others_payable() {
+    let s = Setup::new();
+    let a = s.register(1, 100);
+    let b = s.register(2, 100);
+    s.try_void(&s.business, &s.business, &a).unwrap();
+    let payer = s.payer(100);
+    s.pay(&payer, &b, 100);
+    assert_eq!(s.registry.get(&b).status, InvoiceStatus::Paid);
+}
