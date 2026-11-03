@@ -762,3 +762,24 @@ fn pay_requires_payer_auth_for_pay_and_nested_transfer() {
         )]
     );
 }
+
+#[test]
+fn register_requires_exactly_the_business_auth() {
+    let s = Setup::new();
+    let id = s.register(1, 100);
+    let args = (
+        s.business.clone(),
+        id,
+        s.token.address.clone(),
+        100i128,
+        s.hash(0xC0),
+    )
+        .into_val(&s.env);
+    assert_eq!(
+        s.env.auths(),
+        std::vec![(
+            s.business.clone(),
+            contract_call(&s.env, &s.registry_id, "register", args, std::vec![])
+        )]
+    );
+}
