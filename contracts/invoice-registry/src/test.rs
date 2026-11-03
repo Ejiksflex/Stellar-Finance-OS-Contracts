@@ -650,3 +650,13 @@ fn same_content_hash_may_back_different_ids() {
         s.registry.get(&s.hash(2)).content_hash
     );
 }
+
+#[test]
+fn business_can_pay_its_own_invoice() {
+    let s = Setup::new();
+    let id = s.register(1, 100);
+    s.mint(&s.business, 100);
+    s.pay(&s.business, &id, 100);
+    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Paid);
+    assert_eq!(s.token.balance(&s.business), 100);
+}
