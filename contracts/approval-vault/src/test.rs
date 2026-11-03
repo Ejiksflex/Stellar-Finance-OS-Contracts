@@ -1451,3 +1451,39 @@ fn approve_prunes_approvals_from_removed_approvers() {
     // 2 valid approvals meet the new threshold of 2.
     assert_eq!(s.try_execute(pay), Ok(()));
 }
+
+// ---------------------------------------------------------------- edge cases
+
+#[test]
+fn single_approver_vault_executes_on_proposal_alone() {
+    let env = Env::default();
+    env.ledger().set_timestamp(NOW);
+    let solo = Address::generate(&env);
+    let vault_id = env.register(ApprovalVault, (vec![&env, solo.clone()], 1u32));
+    let vault = ApprovalVaultClient::new(&env, &vault_id);
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = TokenClient::new(&env, &sac.address());
+
+    let args: soroban_sdk::Vec<Val> = (vault_id.clone(), 100i128).into_val(&env);
+    auth(&env, &token_admin, &token.address, "mint", args, &[]);
+    StellarAssetClient::new(&env, &token.address).mint(&vault_id, &100);
+
+    let to = Address::generate(&env);
+    let memo = BytesN::from_array(&env, &[1; 32]);
+    let args = (
+        solo.clone(),
+        token.address.clone(),
+        to.clone(),
+        100i128,
+        memo.clone(),
+        NOW + TTL,
+    )
+        .into_val(&env);
+    auth(&env, &solo, &vault_id, "propose", args, &[]);
+    let id = vault.propose(&solo, &token.address, &to, &100, &memo, &(NOW + TTL));
+
+    env.mock_auths(&[]);
+    vault.execute(&id);
+    assert_eq!(token.balance(&to), 100);
+}
