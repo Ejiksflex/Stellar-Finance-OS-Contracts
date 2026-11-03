@@ -166,6 +166,19 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    /// Execute needs no auth: clear any mocked auths first so the call
+    /// proves that.
+    fn try_execute(&self, id: u64) -> Result<(), Option<Error>> {
+        self.env.mock_auths(&[]);
+        match self.vault.try_execute(&id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -568,4 +581,126 @@ fn approve_rejects_unknown_proposal() {
         s.try_approve(&s.approvers[1], &s.approvers[1], 42),
         Err(Some(Error::ProposalNotFound))
     );
+}
+
+// ---------------------------------------------------------------- execute
+
+#[test]
+fn execute_transfers_and_marks_executed() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    s.approve(&s.approvers[1], id);
+
+    assert_eq!(s.try_execute(id), Ok(()));
+    assert_eq!(s.token.balance(&to), 400);
+    assert_eq!(s.token.balance(&s.vault_id), 600);
+    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Executed);
+}
+
+#[test]
+fn execute_emits_executed_event() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+    let expected = events::Executed { proposal_id: id };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+}
+
+#[test]
+fn execute_rejects_threshold_not_met() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    assert_eq!(s.try_execute(id), Err(Some(Error::ThresholdNotMet)));
+    assert_eq!(s.token.balance(&s.vault_id), 1_000);
+}
+
+#[test]
+fn execute_rejects_expired_proposal() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    s.approve(&s.approvers[1], id);
+    s.env.ledger().set_timestamp(NOW + TTL);
+    assert_eq!(s.try_execute(id), Err(Some(Error::Expired)));
+    assert_eq!(s.token.balance(&s.vault_id), 1_000);
+}
+
+#[test]
+fn execute_rejects_double_execution() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+    assert_eq!(s.try_execute(id), Err(Some(Error::NotPending)));
+    assert_eq!(s.token.balance(&to), 400);
+}
+
+#[test]
+fn execute_rejects_insufficient_vault_balance() {
+    let s = Setup::new();
+    s.fund_vault(100);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 400);
+    s.approve(&s.approvers[1], id);
+    assert_eq!(s.try_execute(id), Err(Some(Error::InsufficientBalance)));
+    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Pending);
+}
+
+#[test]
+fn execute_rejects_unknown_proposal() {
+    let s = Setup::new();
+    assert_eq!(s.try_execute(7), Err(Some(Error::ProposalNotFound)));
+}
+
+#[test]
+fn execute_rejects_unknown_token() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let not_a_token = Address::generate(&s.env);
+    let memo = s.memo(1);
+    let args = (
+        s.approvers[0].clone(),
+        not_a_token.clone(),
+        to.clone(),
+        10i128,
+        memo.clone(),
+        NOW + TTL,
+    )
+        .into_val(&s.env);
+    auth(&s.env, &s.approvers[0], &s.vault_id, "propose", args, &[]);
+    let id = s
+        .vault
+        .propose(&s.approvers[0], &not_a_token, &to, &10, &memo, &(NOW + TTL));
+    s.approve(&s.approvers[1], id);
+    assert_eq!(s.try_execute(id), Err(None));
+    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Pending);
+}
+
+#[test]
+fn execute_with_all_approvals_succeeds() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 1_000);
+    s.approve(&s.approvers[1], id);
+    s.approve(&s.approvers[2], id);
+    s.try_execute(id).unwrap();
+    assert_eq!(s.token.balance(&s.vault_id), 0);
 }

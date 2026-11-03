@@ -56,4 +56,5 @@ pub enum Error {
     ThresholdNotMet = 10,
     ArithmeticOverflow = 11,
     TooManyApprovers = 12,
+    InsufficientBalance = 13,
 }

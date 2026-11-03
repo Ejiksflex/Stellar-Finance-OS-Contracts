@@ -13,7 +13,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, vec, Address, BytesN, Env, Vec};
 
-use crate::events::{Approved, Proposed};
+use crate::events::{Approved, Executed, Proposed};
 use crate::types::{Error, Policy, Proposal, ProposalStatus, MAX_APPROVERS};
 
 #[contract]
@@ -122,7 +122,35 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 3): execute, cancel
+    /// Execute a Pending, unexpired proposal once it has at least `threshold`
+    /// approvals from the *current* approver set. Callable by anyone.
+    ///
+    /// State is marked Executed before the token transfer (no re-entrancy
+    /// assumptions). If the transfer fails the whole transaction reverts.
+    pub fn execute(env: Env, id: u64) -> Result<(), Error> {
+        storage::bump_instance(&env);
+        let policy = storage::get_policy(&env);
+        let mut proposal = storage::get_proposal(&env, id)?;
+        require_open(&env, &proposal)?;
+        if count_valid_approvals(&policy, &proposal.approvals) < policy.threshold {
+            return Err(Error::ThresholdNotMet);
+        }
+
+        let vault = env.current_contract_address();
+        let token = token::TokenClient::new(&env, &proposal.token);
+        if token.balance(&vault) < proposal.amount {
+            return Err(Error::InsufficientBalance);
+        }
+
+        proposal.status = ProposalStatus::Executed;
+        storage::set_proposal(&env, &proposal);
+        token.transfer(&vault, &proposal.to, &proposal.amount);
+
+        Executed { proposal_id: id }.publish(&env);
+        Ok(())
+    }
+
+    // TODO(task 3): cancel
     // TODO(task 4): policy update via threshold-approved proposal
 
     /// The vault's balance of `token`.
@@ -177,4 +205,13 @@ fn require_open(env: &Env, proposal: &Proposal) -> Result<(), Error> {
         return Err(Error::Expired);
     }
     Ok(())
+}
+
+/// Approvals that still count: only addresses in the current policy. If the
+/// policy changes while a proposal is pending, removed approvers' votes drop out.
+fn count_valid_approvals(policy: &Policy, approvals: &Vec<Address>) -> u32 {
+    approvals
+        .iter()
+        .filter(|a| policy.approvers.contains(a))
+        .count() as u32
 }
