@@ -36,6 +36,23 @@ export STELLAR_ACCOUNT
 : "${VAULT_THRESHOLD:?set VAULT_THRESHOLD}"
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
+# Fail fast on bad constructor input, before spending fees on uploads.
+# The contract re-checks all of this; these checks just give clearer errors.
+if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^[GC][A-Z2-7]{55}$"))' \
+    <<<"$VAULT_APPROVERS" >/dev/null 2>&1; then
+  echo "VAULT_APPROVERS must be a non-empty JSON array of G... or C... addresses" >&2
+  exit 1
+fi
+APPROVER_COUNT=$(jq 'length' <<<"$VAULT_APPROVERS")
+if [[ $(jq '(map(.) | unique | length)' <<<"$VAULT_APPROVERS") != "$APPROVER_COUNT" ]]; then
+  echo "VAULT_APPROVERS contains duplicates" >&2
+  exit 1
+fi
+if ! [[ "$VAULT_THRESHOLD" =~ ^[0-9]+$ ]] || (( VAULT_THRESHOLD < 1 || VAULT_THRESHOLD > APPROVER_COUNT )); then
+  echo "VAULT_THRESHOLD must be between 1 and $APPROVER_COUNT" >&2
+  exit 1
+fi
+
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   ./scripts/build.sh
 fi
