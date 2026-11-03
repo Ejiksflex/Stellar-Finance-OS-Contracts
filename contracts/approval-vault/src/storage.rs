@@ -3,7 +3,8 @@
 //! Layout:
 //! * `Policy`, `NextProposalId` → **instance** storage. These are small, read on
 //!   almost every call, and live exactly as long as the contract.
-//! * `Proposal(id)` → **persistent** storage, one entry per proposal.
+//! * `Proposal(id)` / `PolicyProposal(id)` → **persistent** storage, one
+//!   entry per proposal. Both kinds share the `NextProposalId` sequence.
 //!
 //! TTL strategy (see `finance_os_common::ttl`): every entrypoint bumps the
 //! instance TTL, and every proposal read/write bumps that proposal's TTL.
@@ -13,7 +14,7 @@
 use finance_os_common::ttl;
 use soroban_sdk::{contracttype, Env};
 
-use crate::types::{Error, Policy, Proposal};
+use crate::types::{Error, Policy, PolicyProposal, Proposal};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +22,7 @@ pub enum DataKey {
     Policy,
     NextProposalId,
     Proposal(u64),
+    PolicyProposal(u64),
 }
 
 pub fn bump_instance(env: &Env) {
@@ -66,6 +68,23 @@ pub fn get_proposal(env: &Env, id: u64) -> Result<Proposal, Error> {
 
 pub fn set_proposal(env: &Env, proposal: &Proposal) {
     let key = DataKey::Proposal(proposal.id);
+    env.storage().persistent().set(&key, proposal);
+    ttl::extend_persistent(env, &key);
+}
+
+pub fn get_policy_proposal(env: &Env, id: u64) -> Result<PolicyProposal, Error> {
+    let key = DataKey::PolicyProposal(id);
+    let proposal = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(Error::ProposalNotFound)?;
+    ttl::extend_persistent(env, &key);
+    Ok(proposal)
+}
+
+pub fn set_policy_proposal(env: &Env, proposal: &PolicyProposal) {
+    let key = DataKey::PolicyProposal(proposal.id);
     env.storage().persistent().set(&key, proposal);
     ttl::extend_persistent(env, &key);
 }

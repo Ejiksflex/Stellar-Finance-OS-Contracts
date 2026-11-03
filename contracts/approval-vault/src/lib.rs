@@ -13,8 +13,8 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, vec, Address, BytesN, Env, Vec};
 
-use crate::events::{Approved, Cancelled, Executed, Proposed};
-use crate::types::{Error, Policy, Proposal, ProposalStatus, MAX_APPROVERS};
+use crate::events::{Approved, Cancelled, Executed, PolicyProposed, Proposed};
+use crate::types::{Error, Policy, PolicyProposal, Proposal, ProposalStatus, MAX_APPROVERS};
 
 #[contract]
 pub struct ApprovalVault;
@@ -170,7 +170,45 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 4): policy update via threshold-approved proposal
+    /// Propose replacing the policy. The proposer must be a current approver,
+    /// and their approval counts. The new policy is validated up front
+    /// with the same rules as the constructor.
+    pub fn propose_policy_update(
+        env: Env,
+        proposer: Address,
+        new_approvers: Vec<Address>,
+        new_threshold: u32,
+        expires_at: u64,
+    ) -> Result<u64, Error> {
+        proposer.require_auth();
+        storage::bump_instance(&env);
+        require_approver(&storage::get_policy(&env), &proposer)?;
+        let new_policy = validate_policy(new_approvers, new_threshold)?;
+        require_future(&env, expires_at)?;
+
+        let id = storage::next_proposal_id(&env)?;
+        storage::set_policy_proposal(
+            &env,
+            &PolicyProposal {
+                id,
+                new_policy: new_policy.clone(),
+                created_by: proposer.clone(),
+                approvals: vec![&env, proposer.clone()],
+                status: ProposalStatus::Pending,
+                expires_at,
+            },
+        );
+        PolicyProposed {
+            proposal_id: id,
+            proposer,
+            approvers: new_policy.approvers,
+            threshold: new_policy.threshold,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    // TODO(task 4): approve_policy_update, update_policy, cancel_policy_update
 
     /// The vault's balance of `token`.
     pub fn balance(env: Env, token: Address) -> i128 {
@@ -181,6 +219,11 @@ impl ApprovalVault {
     pub fn get_proposal(env: Env, id: u64) -> Result<Proposal, Error> {
         storage::bump_instance(&env);
         storage::get_proposal(&env, id)
+    }
+
+    pub fn get_policy_proposal(env: Env, id: u64) -> Result<PolicyProposal, Error> {
+        storage::bump_instance(&env);
+        storage::get_policy_proposal(&env, id)
     }
 
     pub fn get_policy(env: Env) -> Policy {

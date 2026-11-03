@@ -191,6 +191,57 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn new_approvers(&self, n: u32) -> soroban_sdk::Vec<Address> {
+        approvers(&self.env, n)
+    }
+
+    fn try_propose_policy(
+        &self,
+        signer: &Address,
+        proposer: &Address,
+        new_approvers: &soroban_sdk::Vec<Address>,
+        new_threshold: u32,
+        expires_at: u64,
+    ) -> Result<u64, Option<Error>> {
+        let args = (
+            proposer.clone(),
+            new_approvers.clone(),
+            new_threshold,
+            expires_at,
+        )
+            .into_val(&self.env);
+        auth(
+            &self.env,
+            signer,
+            &self.vault_id,
+            "propose_policy_update",
+            args,
+            &[],
+        );
+        match self.vault.try_propose_policy_update(
+            proposer,
+            new_approvers,
+            &new_threshold,
+            &expires_at,
+        ) {
+            Ok(Ok(id)) => Ok(id),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+
+    fn propose_policy(
+        &self,
+        proposer: &Address,
+        new_approvers: &soroban_sdk::Vec<Address>,
+        t: u32,
+    ) -> u64 {
+        self.try_propose_policy(proposer, proposer, new_approvers, t, NOW + TTL)
+            .expect("propose_policy_update ok")
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -818,5 +869,145 @@ fn cancel_rejects_unknown_proposal() {
     assert_eq!(
         s.try_cancel(&s.approvers[0], &s.approvers[0], 5),
         Err(Some(Error::ProposalNotFound))
+    );
+}
+
+// ---------------------------------------------------------------- propose_policy_update
+
+#[test]
+fn propose_policy_update_creates_pending_policy_proposal() {
+    let s = Setup::new();
+    let new = s.new_approvers(4);
+    let id = s.propose_policy(&s.approvers[0], &new, 3);
+    let p = s.vault.get_policy_proposal(&id);
+    assert_eq!(p.id, id);
+    assert_eq!(p.new_policy.approvers, new);
+    assert_eq!(p.new_policy.threshold, 3);
+    assert_eq!(p.created_by, s.approvers[0]);
+    assert_eq!(p.approvals, vec![&s.env, s.approvers[0].clone()]);
+    assert_eq!(p.status, ProposalStatus::Pending);
+    assert_eq!(p.expires_at, NOW + TTL);
+    // The live policy is untouched until executed.
+    assert_eq!(s.vault.get_policy().threshold, 2);
+}
+
+#[test]
+fn propose_policy_update_emits_policy_proposed_event() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    let id = s.propose_policy(&s.approvers[1], &new, 1);
+    let expected = events::PolicyProposed {
+        proposal_id: id,
+        proposer: s.approvers[1].clone(),
+        approvers: new,
+        threshold: 1,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+}
+
+#[test]
+fn policy_and_payment_proposals_share_id_sequence() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let new = s.new_approvers(2);
+    assert_eq!(s.propose(&s.approvers[0], &to, 1), 0);
+    assert_eq!(s.propose_policy(&s.approvers[0], &new, 1), 1);
+    assert_eq!(s.propose(&s.approvers[0], &to, 1), 2);
+    assert_eq!(
+        s.vault.try_get_proposal(&1),
+        Err(Ok(Error::ProposalNotFound))
+    );
+    assert_eq!(
+        s.vault.try_get_policy_proposal(&0),
+        Err(Ok(Error::ProposalNotFound))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_non_approver() {
+    let s = Setup::new();
+    let outsider = Address::generate(&s.env);
+    let new = s.new_approvers(2);
+    assert_eq!(
+        s.try_propose_policy(&outsider, &outsider, &new, 1, NOW + TTL),
+        Err(Some(Error::NotApprover))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_wrong_signer() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[1], &s.approvers[0], &new, 1, NOW + TTL),
+        Err(None)
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_zero_threshold() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 0, NOW + TTL),
+        Err(Some(Error::InvalidThreshold))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_threshold_above_approvers() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 3, NOW + TTL),
+        Err(Some(Error::InvalidThreshold))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_empty_approver_set() {
+    let s = Setup::new();
+    let new = s.new_approvers(0);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 1, NOW + TTL),
+        Err(Some(Error::InvalidThreshold))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_duplicate_approvers() {
+    let s = Setup::new();
+    let a = Address::generate(&s.env);
+    let new = vec![&s.env, a.clone(), a];
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 1, NOW + TTL),
+        Err(Some(Error::DuplicateApprover))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_too_many_approvers() {
+    let s = Setup::new();
+    let new = s.new_approvers(crate::types::MAX_APPROVERS + 1);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 1, NOW + TTL),
+        Err(Some(Error::TooManyApprovers))
+    );
+}
+
+#[test]
+fn propose_policy_update_rejects_past_expiry() {
+    let s = Setup::new();
+    let new = s.new_approvers(2);
+    assert_eq!(
+        s.try_propose_policy(&s.approvers[0], &s.approvers[0], &new, 1, NOW),
+        Err(Some(Error::InvalidExpiry))
     );
 }

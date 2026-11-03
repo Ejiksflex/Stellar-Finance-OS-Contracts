@@ -6,7 +6,7 @@
 //! Topic layout: `[<event_name>, proposal_id]`. The event name is the struct
 //! name in snake_case. `proposal_id` is a topic so the indexer can filter on it.
 
-use soroban_sdk::{contractevent, Address};
+use soroban_sdk::{contractevent, Address, Vec};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,6 +17,18 @@ pub struct Proposed {
     pub token: Address,
     pub to: Address,
     pub amount: i128,
+}
+
+/// A policy-update proposal was created. `approved` and `cancelled` are shared
+/// with payment proposals (ids are unique across both kinds).
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposed {
+    #[topic]
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub approvers: Vec<Address>,
+    pub threshold: u32,
 }
 
 #[contractevent]

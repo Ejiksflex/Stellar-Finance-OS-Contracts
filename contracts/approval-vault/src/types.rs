@@ -39,6 +39,23 @@ pub struct Proposal {
     pub expires_at: u64,
 }
 
+/// A proposal to replace the vault's `Policy`. It needs `threshold` approvals
+/// from the *current* approver set, the same as a payment proposal (README §3:
+/// "requires threshold of current approvers, via its own proposal type").
+///
+/// It shares the id sequence with payment proposals, so every `proposal_id` in
+/// events is unique across both kinds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposal {
+    pub id: u64,
+    pub new_policy: Policy,
+    pub created_by: Address,
+    pub approvals: Vec<Address>,
+    pub status: ProposalStatus,
+    pub expires_at: u64,
+}
+
 /// Error codes are part of the public interface: never renumber, only append.
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
