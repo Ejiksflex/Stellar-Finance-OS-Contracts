@@ -714,3 +714,51 @@ fn void_does_not_free_the_id_for_reuse() {
         Err(Some(Error::InvoiceExists))
     );
 }
+
+// ---------------------------------------------------------------- recorded auth trees
+
+fn contract_call(
+    env: &Env,
+    contract: &Address,
+    fn_name: &str,
+    args: soroban_sdk::Vec<Val>,
+    subs: std::vec::Vec<soroban_sdk::testutils::AuthorizedInvocation>,
+) -> soroban_sdk::testutils::AuthorizedInvocation {
+    soroban_sdk::testutils::AuthorizedInvocation {
+        function: soroban_sdk::testutils::AuthorizedFunction::Contract((
+            contract.clone(),
+            soroban_sdk::Symbol::new(env, fn_name),
+            args,
+        )),
+        sub_invocations: subs,
+    }
+}
+
+#[test]
+fn pay_requires_payer_auth_for_pay_and_nested_transfer() {
+    let s = Setup::new();
+    let id = s.register(1, 100);
+    let payer = s.payer(100);
+    s.pay(&payer, &id, 60);
+    let pay_args = (payer.clone(), id, 60i128).into_val(&s.env);
+    let transfer_args = (payer.clone(), s.business.clone(), 60i128).into_val(&s.env);
+    assert_eq!(
+        s.env.auths(),
+        std::vec![(
+            payer,
+            contract_call(
+                &s.env,
+                &s.registry_id,
+                "pay",
+                pay_args,
+                std::vec![contract_call(
+                    &s.env,
+                    &s.token.address,
+                    "transfer",
+                    transfer_args,
+                    std::vec![]
+                )]
+            )
+        )]
+    );
+}
