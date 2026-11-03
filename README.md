@@ -86,27 +86,51 @@ finance-os-contracts/
 Holds an organisation's treasury tokens. Outgoing payments are proposals that need M-of-N approver signatures before they execute.
 
 ### Storage
-- `Policy { approvers: Vec<Address>, threshold: u32 }`
-- `Proposal { id: u64, token: Address, to: Address, amount: i128, memo_ref: BytesN<32>, created_by: Address, approvals: Vec<Address>, status: Pending | Executed | Cancelled, expires_at: u64 }`
-- `NextProposalId: u64`
+- `Policy { approvers: Vec<Address>, threshold: u32 }` (instance; at most 20 approvers)
+- `Proposal { id: u64, token: Address, to: Address, amount: i128, memo_ref: BytesN<32>, created_by: Address, approvals: Vec<Address>, status: Pending | Executed | Cancelled, expires_at: u64 }` (persistent)
+- `PolicyProposal { id: u64, new_policy: Policy, created_by: Address, approvals: Vec<Address>, status, expires_at: u64 }` (persistent)
+- `NextProposalId: u64` (instance; shared by both proposal kinds, so ids are unique across them)
+
+`expires_at` is a ledger timestamp in seconds. A proposal is expired once `now >= expires_at`.
 
 ### Functions
 
 | Function | Auth | Behaviour |
 |---|---|---|
-| `__constructor(approvers, threshold)` | — | Sets initial policy. Rejects `threshold == 0` or `threshold > approvers.len()` |
-| `deposit(from, token, amount)` | `from` | Transfers tokens into the vault |
-| `propose(proposer, token, to, amount, memo_ref, expires_at) -> u64` | `proposer` (must be approver) | Creates a Pending proposal; proposer's approval counts |
-| `approve(approver, id)` | `approver` | Adds approval; no double-approving; rejects expired/non-pending |
-| `execute(id)` | anyone | If approvals ≥ threshold and not expired → transfers tokens, marks Executed |
-| `cancel(caller, id)` | approver | Marks Cancelled |
-| `update_policy(new_approvers, new_threshold)` | **requires threshold of current approvers** (via its own proposal type) | Changes who can approve |
-| `get_proposal(id)`, `get_policy()`, `balance(token)` | — | Views |
+| `__constructor(approvers, threshold)` | — | Sets initial policy. Rejects `threshold == 0`, `threshold > approvers.len()`, duplicate approvers, more than 20 approvers |
+| `deposit(from, token, amount)` | `from` | Transfers tokens into the vault. Rejects `amount <= 0` |
+| `propose(proposer, token, to, amount, memo_ref, expires_at) -> u64` | `proposer` (must be approver) | Creates a Pending proposal; proposer's approval counts. Rejects `amount <= 0`, `expires_at <= now` |
+| `approve(approver, id)` | `approver` (must be approver) | Adds approval; no double-approving; rejects expired/non-pending |
+| `execute(id)` | anyone | If approvals from **current** approvers ≥ threshold, not expired, and the vault holds enough → marks Executed, then transfers |
+| `cancel(caller, id)` | `caller` (must be approver) | Marks a Pending proposal Cancelled (allowed after expiry) |
+| `propose_policy_update(proposer, new_approvers, new_threshold, expires_at) -> u64` | `proposer` (must be approver) | Creates a Pending `PolicyProposal`. New policy validated like the constructor |
+| `approve_policy_update(approver, id)` | `approver` (must be approver) | Same rules as `approve` |
+| `update_policy(id)` | anyone | If approvals from current approvers ≥ current threshold and not expired → replaces the policy |
+| `cancel_policy_update(caller, id)` | `caller` (must be approver) | Marks a Pending policy proposal Cancelled |
+| `get_proposal(id)`, `get_policy_proposal(id)`, `get_policy()`, `balance(token)` | — | Views |
+
+**Deviation from the original sketch:** `update_policy(new_approvers, new_threshold)` is split into `propose_policy_update` / `approve_policy_update` / `update_policy(id)` / `cancel_policy_update`. This is how "its own proposal type" works in practice.
+
+**Approvals are re-checked against the current policy.** If an approver is removed, their approvals on still-pending proposals stop counting.
 
 ### Events
-`proposed`, `approved`, `executed`, `cancelled`, `policy_updated` — each includes `proposal_id` so the backend indexer can mirror state.
+
+Topics are `[<name>, proposal_id]`; data is a map of the remaining fields.
+
+| Event | Data fields |
+|---|---|
+| `proposed` | `proposer, token, to, amount` |
+| `policy_proposed` | `proposer, approvers, threshold` |
+| `approved` | `approver, approvals` (running count; used for both kinds) |
+| `executed` | — |
+| `cancelled` | `cancelled_by` (used for both kinds) |
+| `policy_updated` | `approvers, threshold` |
 
 `memo_ref` is a hash of the backend `PaymentRequest` ID, linking on-chain proposals to off-chain records without exposing business data.
+
+### Errors
+
+`InvalidThreshold=1, DuplicateApprover=2, NotApprover=3, InvalidAmount=4, ProposalNotFound=5, NotPending=6, AlreadyApproved=7, Expired=8, InvalidExpiry=9, ThresholdNotMet=10, ArithmeticOverflow=11, TooManyApprovers=12, InsufficientBalance=13`
 
 ---
 
@@ -115,7 +139,7 @@ Holds an organisation's treasury tokens. Outgoing payments are proposals that ne
 Lets a business register invoices on-chain and lets clients pay them through the contract, so payment → invoice matching is exact.
 
 ### Storage
-- `Invoice { id: BytesN<32>, business: Address, token: Address, amount: i128, paid: i128, status: Open | Paid | Void, content_hash: BytesN<32> }`
+- `Invoice { id: BytesN<32>, business: Address, token: Address, amount: i128, paid: i128, status: Open | Paid | Void, content_hash: BytesN<32> }` (persistent)
 
 `id` and `content_hash` are hashes generated by the backend. **No customer names, amounts-in-words, or personal data go on-chain** — only hashes and the payable amount.
 
@@ -123,13 +147,28 @@ Lets a business register invoices on-chain and lets clients pay them through the
 
 | Function | Auth | Behaviour |
 |---|---|---|
-| `register(business, id, token, amount, content_hash)` | `business` | Creates Open invoice; rejects duplicate id |
-| `pay(payer, id, amount)` | `payer` | Transfers `amount` of `token` from payer → `business` (or its vault address); updates `paid`; sets Paid when `paid >= amount` |
-| `void(business, id)` | `business` | Only if nothing paid yet |
+| `register(business, id, token, amount, content_hash)` | `business` | Creates Open invoice. Rejects duplicate id, `amount <= 0`, and a `token` that doesn't implement the token interface |
+| `pay(payer, id, amount)` | `payer` | Transfers `amount` of `token` from payer → `business`; updates `paid`; sets Paid when `paid == amount`. Partial payments allowed; **overpayment rejected** |
+| `void(business, id)` | `business` (must be the invoice's business) | Only while Open and nothing paid yet |
 | `get(id)` | — | View |
 
+Payments go to the `business` address. Routing them to the business's `approval-vault` instead is not supported in v1, because `register` needs `business` auth and the vault can't sign it. That needs a separate `payee` field (open item).
+
 ### Events
-`registered`, `paid { id, payer, amount, total_paid }`, `voided`. The backend uses `paid` events as the `contract_event` match method.
+
+Topics are `[<name>, id]`; data is a map of the remaining fields.
+
+| Event | Data fields |
+|---|---|
+| `registered` | `business, token, amount` |
+| `paid` | `payer, amount, total_paid` |
+| `voided` | — |
+
+The backend uses `paid` events as the `contract_event` match method.
+
+### Errors
+
+`InvoiceExists=1, InvoiceNotFound=2, InvalidAmount=3, NotOpen=4, Overpayment=5, AlreadyPaid=6, ArithmeticOverflow=7, InvalidToken=8, NotBusiness=9`
 
 ---
 
