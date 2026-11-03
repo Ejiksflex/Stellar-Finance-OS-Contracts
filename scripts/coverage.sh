@@ -12,8 +12,8 @@ command -v cargo-llvm-cov >/dev/null || {
   exit 1
 }
 
-# Exclude test modules themselves from the numbers.
-IGNORE='(^|/)test\.rs$'
+# Exclude test and property-test modules from the numbers.
+IGNORE='(^|/)(test|proptests)\.rs$'
 
 cargo llvm-cov --workspace --ignore-filename-regex "$IGNORE" --summary-only
 if [[ "${1:-}" == "--html" ]]; then
