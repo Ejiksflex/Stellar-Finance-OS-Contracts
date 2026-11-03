@@ -39,6 +39,8 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | V10 | Malicious `token` on a proposal | Approvers approve the full proposal, including `token`. Only vault-held balances of that token can move | `execute_rejects_unknown_token` |
 | V11 | Proposal archived (TTL) while still needed | Every read/write bumps it to 30 days; archived entries can be restored | `proposal_ttl_is_extended_on_*` |
 | V12 | Id overflow | `checked_add` on `NextProposalId` | Code review |
+| V13 | Two approved proposals together overspend the vault | Each `execute` re-checks the live balance; the second one fails and stays Pending | `two_proposals_cannot_overspend_vault`, `insufficient_balance_proposal_executes_after_top_up` |
+| V14 | Hidden extra or missing `require_auth` | The recorded auth trees are asserted exactly | `propose_requires_exactly_the_proposers_auth`, `deposit_requires_depositor_auth_for_vault_and_token_transfer`, `execute_requires_no_auth` |
 
 ### invoice-registry
 
@@ -53,6 +55,7 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | R7 | Another business voids my invoice | `NotBusiness` | `void_rejects_other_business` |
 | R8 | Fake token registered so the "paid" events are worthless | `register` checks `decimals()`, but a malicious token contract still passes. **The indexer must only trust `paid` events for allow-listed token addresses** | `register_rejects_unknown_token`, `register_rejects_non_token_contract` |
 | R9 | i128 overflow on `paid` | `checked_add` → `ArithmeticOverflow` | `pay_rejects_overflowing_total` |
+| R11 | Reusing a voided id makes events ambiguous | Ids are never freed; `InvoiceExists` even after `void` | `void_does_not_free_the_id_for_reuse` |
 | R10 | PII on-chain | Only hashes and amounts are stored (`id`, `content_hash`) | Design / backend responsibility |
 
 ## Residual risks and open items
