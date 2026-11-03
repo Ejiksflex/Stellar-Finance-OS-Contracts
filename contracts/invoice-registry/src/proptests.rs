@@ -1,0 +1,81 @@
+//! Property tests: invariants that must hold for any payment sequence.
+#![allow(clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::panic)]
+
+extern crate std;
+
+use proptest::prelude::*;
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    token::{StellarAssetClient, TokenClient},
+    Address, BytesN, Env, IntoVal,
+};
+
+use crate::{types::InvoiceStatus, InvoiceRegistry, InvoiceRegistryClient};
+
+fn mock(
+    env: &Env,
+    signer: &Address,
+    contract: &Address,
+    f: &str,
+    args: soroban_sdk::Vec<soroban_sdk::Val>,
+    subs: &[MockAuthInvoke],
+) {
+    env.mock_auths(&[MockAuth {
+        address: signer,
+        invoke: &MockAuthInvoke {
+            contract,
+            fn_name: f,
+            args,
+            sub_invokes: subs,
+        },
+    }]);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
+
+    /// For any invoice amount and any sequence of attempted payments:
+    /// `paid` never exceeds `amount`, the business receives exactly `paid`,
+    /// and the status is Paid iff `paid == amount`.
+    #[test]
+    fn paid_never_exceeds_amount(
+        amount in 1i128..1_000,
+        attempts in proptest::collection::vec(-5i128..400, 1..12),
+    ) {
+        let env = Env::default();
+        let registry_id = env.register(InvoiceRegistry, ());
+        let registry = InvoiceRegistryClient::new(&env, &registry_id);
+        let admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(admin.clone());
+        let token = TokenClient::new(&env, &sac.address());
+        let business = Address::generate(&env);
+        let payer = Address::generate(&env);
+
+        let mint_args = (payer.clone(), 10_000i128).into_val(&env);
+        mock(&env, &admin, &token.address, "mint", mint_args, &[]);
+        StellarAssetClient::new(&env, &token.address).mint(&payer, &10_000);
+
+        let id = BytesN::from_array(&env, &[1; 32]);
+        let content = BytesN::from_array(&env, &[2; 32]);
+        let reg_args = (business.clone(), id.clone(), token.address.clone(), amount, content.clone()).into_val(&env);
+        mock(&env, &business, &registry_id, "register", reg_args, &[]);
+        registry.register(&business, &id, &token.address, &amount, &content);
+
+        for a in attempts {
+            let args = (payer.clone(), id.clone(), a).into_val(&env);
+            let sub = [MockAuthInvoke {
+                contract: &token.address,
+                fn_name: "transfer",
+                args: (payer.clone(), business.clone(), a).into_val(&env),
+                sub_invokes: &[],
+            }];
+            mock(&env, &payer, &registry_id, "pay", args, &sub);
+            let _ = registry.try_pay(&payer, &id, &a);
+
+            let inv = registry.get(&id);
+            prop_assert!(inv.paid >= 0 && inv.paid <= inv.amount);
+            prop_assert_eq!(token.balance(&business), inv.paid);
+            prop_assert_eq!(inv.status == InvoiceStatus::Paid, inv.paid == inv.amount);
+        }
+    }
+}
