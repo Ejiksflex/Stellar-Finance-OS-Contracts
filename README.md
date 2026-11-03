@@ -391,7 +391,7 @@ Releases are tagged with semver. **Changing an event shape, a function signature
 | `./scripts/deploy.sh testnet` | Deploys and writes `deployments/testnet.json` |
 | `./scripts/bindings.sh` | Regenerates `bindings/` |
 
-**CI** (`.github/workflows/ci.yml`) runs the check gate, a `stellar contract build`, and a coverage job (HTML report as an artifact) on every push and PR.
+**CI** (`.github/workflows/ci.yml`) runs on every push and PR: the check gate, a `stellar contract build` with a 64 KiB size limit, a coverage job (HTML report as an artifact), and `cargo audit`. Pushing a `vX.Y.Z` tag runs **Release**, which publishes both Wasm files with `SHA256SUMS`.
 
 **Testing conventions:**
 - Auth is mocked **explicitly per call**. `mock_all_auths()` is only allowed in a test whose name says so, so auth bugs can't hide.
