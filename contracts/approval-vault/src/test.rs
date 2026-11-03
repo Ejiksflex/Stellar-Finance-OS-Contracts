@@ -1723,3 +1723,85 @@ fn execute_requires_no_auth() {
     s.try_execute(id).unwrap();
     assert_eq!(s.env.auths(), std::vec![]);
 }
+
+// ---------------------------------------------------------------- docs/events.md
+
+#[test]
+fn event_topic_xdr_matches_docs() {
+    use soroban_sdk::xdr::{ContractEventBody, Limits, ScVal, WriteXdr};
+    let env = Env::default();
+    let id = Address::generate(&env);
+    let a = Address::generate(&env);
+    let topic0 = |ev: soroban_sdk::xdr::ContractEvent| -> (std::string::String, ScVal) {
+        let ContractEventBody::V0(body) = ev.body;
+        (
+            body.topics[0].to_xdr_base64(Limits::none()).unwrap(),
+            body.data,
+        )
+    };
+    let cases: std::vec::Vec<(soroban_sdk::xdr::ContractEvent, &str)> = std::vec![
+        (
+            events::Proposed {
+                proposal_id: 0,
+                proposer: a.clone(),
+                token: a.clone(),
+                to: a.clone(),
+                amount: 1
+            }
+            .to_xdr(&env, &id),
+            "AAAADwAAAAhwcm9wb3NlZA==",
+        ),
+        (
+            events::PolicyProposed {
+                proposal_id: 0,
+                proposer: a.clone(),
+                approvers: vec![&env],
+                threshold: 1
+            }
+            .to_xdr(&env, &id),
+            "AAAADwAAAA9wb2xpY3lfcHJvcG9zZWQA",
+        ),
+        (
+            events::Approved {
+                proposal_id: 0,
+                approver: a.clone(),
+                approvals: 1
+            }
+            .to_xdr(&env, &id),
+            "AAAADwAAAAhhcHByb3ZlZA==",
+        ),
+        (
+            events::Executed { proposal_id: 0 }.to_xdr(&env, &id),
+            "AAAADwAAAAhleGVjdXRlZA=="
+        ),
+        (
+            events::Cancelled {
+                proposal_id: 0,
+                cancelled_by: a.clone()
+            }
+            .to_xdr(&env, &id),
+            "AAAADwAAAAljYW5jZWxsZWQAAAA=",
+        ),
+        (
+            events::PolicyUpdated {
+                proposal_id: 0,
+                approvers: vec![&env],
+                threshold: 1
+            }
+            .to_xdr(&env, &id),
+            "AAAADwAAAA5wb2xpY3lfdXBkYXRlZAAA",
+        ),
+    ];
+    for (ev, expected) in cases {
+        let (got, data) = topic0(ev);
+        assert_eq!(got, expected);
+        // Data is always a map, with keys in sorted order.
+        let ScVal::Map(Some(map)) = data else {
+            panic!("data is not a map: {data:?}")
+        };
+        let keys: std::vec::Vec<_> = map.iter().map(|e| e.key.clone()).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted);
+    }
+}

@@ -783,3 +783,55 @@ fn register_requires_exactly_the_business_auth() {
         )]
     );
 }
+
+// ---------------------------------------------------------------- docs/events.md
+
+#[test]
+fn event_topic_xdr_matches_docs() {
+    use soroban_sdk::xdr::{ContractEventBody, Limits, ScVal, WriteXdr};
+    let env = Env::default();
+    let contract = Address::generate(&env);
+    let a = Address::generate(&env);
+    let id = BytesN::from_array(&env, &[1; 32]);
+    let cases: std::vec::Vec<(soroban_sdk::xdr::ContractEvent, &str)> = std::vec![
+        (
+            events::Registered {
+                id: id.clone(),
+                business: a.clone(),
+                token: a.clone(),
+                amount: 1
+            }
+            .to_xdr(&env, &contract),
+            "AAAADwAAAApyZWdpc3RlcmVkAAA=",
+        ),
+        (
+            events::Paid {
+                id: id.clone(),
+                payer: a.clone(),
+                amount: 1,
+                total_paid: 1
+            }
+            .to_xdr(&env, &contract),
+            "AAAADwAAAARwYWlk",
+        ),
+        (
+            events::Voided { id: id.clone() }.to_xdr(&env, &contract),
+            "AAAADwAAAAZ2b2lkZWQAAA=="
+        ),
+    ];
+    for (ev, expected) in cases {
+        let ContractEventBody::V0(body) = ev.body;
+        assert_eq!(
+            body.topics[0].to_xdr_base64(Limits::none()).unwrap(),
+            expected
+        );
+        assert!(matches!(body.topics[1], ScVal::Bytes(ref b) if b.len() == 32));
+        let ScVal::Map(Some(map)) = body.data else {
+            panic!("data is not a map")
+        };
+        let keys: std::vec::Vec<_> = map.iter().map(|e| e.key.clone()).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted);
+    }
+}
