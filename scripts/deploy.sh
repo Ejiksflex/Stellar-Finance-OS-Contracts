@@ -67,11 +67,13 @@ VAULT_HASH=$(upload "$WASM_DIR/approval_vault.wasm")
 REGISTRY_HASH=$(upload "$WASM_DIR/invoice_registry.wasm")
 
 echo "Deploying approval-vault…"
-VAULT_ID=$(stellar contract deploy --wasm-hash "$VAULT_HASH" "${NET_ARGS[@]}" \
+# --alias lets you run e.g. `stellar contract invoke --id approval-vault ...`
+# locally after deploying.
+VAULT_ID=$(stellar contract deploy --wasm-hash "$VAULT_HASH" "${NET_ARGS[@]}" --alias approval-vault \
   -- --approvers "$VAULT_APPROVERS" --threshold "$VAULT_THRESHOLD" | tail -n1)
 
 echo "Deploying invoice-registry…"
-REGISTRY_ID=$(stellar contract deploy --wasm-hash "$REGISTRY_HASH" "${NET_ARGS[@]}" | tail -n1)
+REGISTRY_ID=$(stellar contract deploy --wasm-hash "$REGISTRY_HASH" "${NET_ARGS[@]}" --alias invoice-registry | tail -n1)
 
 OUT="deployments/$NETWORK.json"
 jq -n \
