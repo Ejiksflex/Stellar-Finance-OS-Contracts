@@ -29,6 +29,12 @@ event shape or error code is a **major** bump.
 - Build: contract meta records `source_repo` and `source_rev`; deployments
   record `sourceRev` and `cliVersion`.
 
+### Reproducibility
+- Rust toolchain pinned to 1.99.1 and CI runners to ubuntu-24.04.
+- `scripts/verify-deployment.sh` compares on-chain Wasm hashes with the
+  deployment record and the local build; the testnet deploy workflow runs it.
+- `docs/verifying-builds.md` explains how to verify a deployment from source.
+
 ### Deviations from the original design
 - Policy changes use a dedicated proposal flow (`propose_policy_update` →
   `approve_policy_update` → `update_policy(id)`) instead of
