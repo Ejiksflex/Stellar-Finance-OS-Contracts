@@ -660,3 +660,34 @@ fn business_can_pay_its_own_invoice() {
     assert_eq!(s.registry.get(&id).status, InvoiceStatus::Paid);
     assert_eq!(s.token.balance(&s.business), 100);
 }
+
+#[test]
+fn invoices_in_different_tokens_settle_in_their_own_token() {
+    let s = Setup::new();
+    let other_admin = Address::generate(&s.env);
+    let other = s
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let other_token = TokenClient::new(&s.env, &other.address());
+    let id = s.hash(5);
+    s.try_register(&s.business, &s.business, &id, &other.address(), 40)
+        .unwrap();
+
+    let payer = Address::generate(&s.env);
+    let args: soroban_sdk::Vec<Val> = (payer.clone(), 40i128).into_val(&s.env);
+    auth(&s.env, &other_admin, &other.address(), "mint", args, &[]);
+    StellarAssetClient::new(&s.env, &other.address()).mint(&payer, &40);
+
+    let args = (payer.clone(), id.clone(), 40i128).into_val(&s.env);
+    let sub = [MockAuthInvoke {
+        contract: &other.address(),
+        fn_name: "transfer",
+        args: (payer.clone(), s.business.clone(), 40i128).into_val(&s.env),
+        sub_invokes: &[],
+    }];
+    auth(&s.env, &payer, &s.registry_id, "pay", args, &sub);
+    s.registry.pay(&payer, &id, &40);
+
+    assert_eq!(other_token.balance(&s.business), 40);
+    assert_eq!(s.token.balance(&s.business), 0);
+}
