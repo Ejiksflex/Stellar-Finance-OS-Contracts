@@ -69,9 +69,7 @@ impl ApprovalVault {
         if !amount::is_positive(amount) {
             return Err(Error::InvalidAmount);
         }
-        if expires_at <= env.ledger().timestamp() {
-            return Err(Error::InvalidExpiry);
-        }
+        require_future(&env, expires_at)?;
 
         let id = storage::next_proposal_id(&env)?;
         storage::set_proposal(
@@ -106,7 +104,7 @@ impl ApprovalVault {
         require_approver(&storage::get_policy(&env), &approver)?;
 
         let mut proposal = storage::get_proposal(&env, id)?;
-        require_open(&env, &proposal)?;
+        require_open(&env, proposal.status, proposal.expires_at)?;
         if proposal.approvals.contains(&approver) {
             return Err(Error::AlreadyApproved);
         }
@@ -131,7 +129,7 @@ impl ApprovalVault {
         storage::bump_instance(&env);
         let policy = storage::get_policy(&env);
         let mut proposal = storage::get_proposal(&env, id)?;
-        require_open(&env, &proposal)?;
+        require_open(&env, proposal.status, proposal.expires_at)?;
         if count_valid_approvals(&policy, &proposal.approvals) < policy.threshold {
             return Err(Error::ThresholdNotMet);
         }
@@ -218,12 +216,20 @@ fn require_approver(policy: &Policy, who: &Address) -> Result<(), Error> {
 }
 
 /// A proposal can be acted on only while Pending and before `expires_at`.
-fn require_open(env: &Env, proposal: &Proposal) -> Result<(), Error> {
-    if proposal.status != ProposalStatus::Pending {
+fn require_open(env: &Env, status: ProposalStatus, expires_at: u64) -> Result<(), Error> {
+    if status != ProposalStatus::Pending {
         return Err(Error::NotPending);
     }
-    if env.ledger().timestamp() >= proposal.expires_at {
+    if env.ledger().timestamp() >= expires_at {
         return Err(Error::Expired);
+    }
+    Ok(())
+}
+
+/// `expires_at` must be strictly in the future.
+fn require_future(env: &Env, expires_at: u64) -> Result<(), Error> {
+    if expires_at <= env.ledger().timestamp() {
+        return Err(Error::InvalidExpiry);
     }
     Ok(())
 }
