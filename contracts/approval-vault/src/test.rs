@@ -1487,3 +1487,17 @@ fn single_approver_vault_executes_on_proposal_alone() {
     vault.execute(&id);
     assert_eq!(token.balance(&to), 100);
 }
+
+#[test]
+fn approve_after_execute_is_rejected() {
+    let s = Setup::new();
+    s.fund_vault(100);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 100);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+    assert_eq!(
+        s.try_approve(&s.approvers[2], &s.approvers[2], id),
+        Err(Some(Error::NotPending))
+    );
+}
