@@ -691,3 +691,15 @@ fn invoices_in_different_tokens_settle_in_their_own_token() {
     assert_eq!(other_token.balance(&s.business), 40);
     assert_eq!(s.token.balance(&s.business), 0);
 }
+
+#[test]
+fn get_returns_void_invoice() {
+    let s = Setup::new();
+    let id = s.register(1, 100);
+    s.try_void(&s.business, &s.business, &id).unwrap();
+    let inv = s.registry.get(&id);
+    assert_eq!(
+        (inv.status, inv.paid, inv.amount),
+        (InvoiceStatus::Void, 0, 100)
+    );
+}
