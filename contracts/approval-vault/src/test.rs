@@ -179,6 +179,18 @@ impl Setup<'_> {
     }
 }
 
+impl Setup<'_> {
+    fn try_cancel(&self, signer: &Address, caller: &Address, id: u64) -> Result<(), Option<Error>> {
+        let args = (caller.clone(), id).into_val(&self.env);
+        auth(&self.env, signer, &self.vault_id, "cancel", args, &[]);
+        match self.vault.try_cancel(caller, &id) {
+            Ok(Ok(())) => Ok(()),
+            Err(Ok(e)) => Err(Some(e)),
+            _ => Err(None),
+        }
+    }
+}
+
 /// Mock exactly one authorisation: `signer` authorises `contract.fn_name(args)`.
 fn auth(
     env: &Env,
@@ -703,4 +715,108 @@ fn execute_with_all_approvals_succeeds() {
     s.approve(&s.approvers[2], id);
     s.try_execute(id).unwrap();
     assert_eq!(s.token.balance(&s.vault_id), 0);
+}
+
+// ---------------------------------------------------------------- cancel
+
+#[test]
+fn cancel_marks_cancelled_and_emits_event() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    assert_eq!(s.try_cancel(&s.approvers[2], &s.approvers[2], id), Ok(()));
+    // `events().all()` only holds the latest invocation's events: check first.
+    let expected = events::Cancelled {
+        proposal_id: id,
+        cancelled_by: s.approvers[2].clone(),
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Cancelled);
+}
+
+#[test]
+fn cancel_blocks_later_approve_and_execute() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.try_cancel(&s.approvers[0], &s.approvers[0], id).unwrap();
+    assert_eq!(
+        s.try_approve(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::NotPending))
+    );
+    assert_eq!(s.try_execute(id), Err(Some(Error::NotPending)));
+}
+
+#[test]
+fn cancel_allowed_after_expiry() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.env.ledger().set_timestamp(NOW + TTL + 1);
+    assert_eq!(s.try_cancel(&s.approvers[1], &s.approvers[1], id), Ok(()));
+}
+
+#[test]
+fn cancel_rejects_non_approver() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let outsider = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    assert_eq!(
+        s.try_cancel(&outsider, &outsider, id),
+        Err(Some(Error::NotApprover))
+    );
+}
+
+#[test]
+fn cancel_rejects_wrong_signer() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let outsider = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    assert_eq!(s.try_cancel(&outsider, &s.approvers[1], id), Err(None));
+    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Pending);
+}
+
+#[test]
+fn cancel_rejects_executed_proposal() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.approve(&s.approvers[1], id);
+    s.try_execute(id).unwrap();
+    assert_eq!(
+        s.try_cancel(&s.approvers[0], &s.approvers[0], id),
+        Err(Some(Error::NotPending))
+    );
+}
+
+#[test]
+fn cancel_rejects_already_cancelled() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let id = s.propose(&s.approvers[0], &to, 10);
+    s.try_cancel(&s.approvers[0], &s.approvers[0], id).unwrap();
+    assert_eq!(
+        s.try_cancel(&s.approvers[1], &s.approvers[1], id),
+        Err(Some(Error::NotPending))
+    );
+}
+
+#[test]
+fn cancel_rejects_unknown_proposal() {
+    let s = Setup::new();
+    assert_eq!(
+        s.try_cancel(&s.approvers[0], &s.approvers[0], 5),
+        Err(Some(Error::ProposalNotFound))
+    );
 }

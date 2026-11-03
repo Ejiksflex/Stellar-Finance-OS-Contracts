@@ -13,7 +13,7 @@ mod test;
 use finance_os_common::amount;
 use soroban_sdk::{contract, contractimpl, token, vec, Address, BytesN, Env, Vec};
 
-use crate::events::{Approved, Executed, Proposed};
+use crate::events::{Approved, Cancelled, Executed, Proposed};
 use crate::types::{Error, Policy, Proposal, ProposalStatus, MAX_APPROVERS};
 
 #[contract]
@@ -150,7 +150,28 @@ impl ApprovalVault {
         Ok(())
     }
 
-    // TODO(task 3): cancel
+    /// Cancel a Pending proposal. Any approver may cancel, including after
+    /// expiry (so stale proposals can be closed out explicitly).
+    pub fn cancel(env: Env, caller: Address, id: u64) -> Result<(), Error> {
+        caller.require_auth();
+        storage::bump_instance(&env);
+        require_approver(&storage::get_policy(&env), &caller)?;
+
+        let mut proposal = storage::get_proposal(&env, id)?;
+        if proposal.status != ProposalStatus::Pending {
+            return Err(Error::NotPending);
+        }
+        proposal.status = ProposalStatus::Cancelled;
+        storage::set_proposal(&env, &proposal);
+
+        Cancelled {
+            proposal_id: id,
+            cancelled_by: caller,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
     // TODO(task 4): policy update via threshold-approved proposal
 
     /// The vault's balance of `token`.
