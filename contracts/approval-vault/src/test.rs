@@ -1551,3 +1551,17 @@ fn execute_drains_vault_exactly() {
     assert_eq!(s.try_execute(id), Ok(()));
     assert_eq!(s.token.balance(&s.vault_id), 0);
 }
+
+#[test]
+fn two_proposals_cannot_overspend_vault() {
+    let s = Setup::new();
+    s.fund_vault(500);
+    let to = Address::generate(&s.env);
+    let a = s.propose(&s.approvers[0], &to, 400);
+    let b = s.propose(&s.approvers[1], &to, 400);
+    s.approve(&s.approvers[1], a);
+    s.approve(&s.approvers[0], b);
+    s.try_execute(a).unwrap();
+    assert_eq!(s.try_execute(b), Err(Some(Error::InsufficientBalance)));
+    assert_eq!(s.vault.get_proposal(&b).status, ProposalStatus::Pending);
+}
