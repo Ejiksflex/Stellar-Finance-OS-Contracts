@@ -101,13 +101,15 @@ impl ApprovalVault {
     pub fn approve(env: Env, approver: Address, id: u64) -> Result<(), Error> {
         approver.require_auth();
         storage::bump_instance(&env);
-        require_approver(&storage::get_policy(&env), &approver)?;
+        let policy = storage::get_policy(&env);
+        require_approver(&policy, &approver)?;
 
         let mut proposal = storage::get_proposal(&env, id)?;
         require_open(&env, proposal.status, proposal.expires_at)?;
         if proposal.approvals.contains(&approver) {
             return Err(Error::AlreadyApproved);
         }
+        proposal.approvals = current_approvals(&env, &policy, &proposal.approvals);
         proposal.approvals.push_back(approver.clone());
         storage::set_proposal(&env, &proposal);
 
@@ -212,13 +214,15 @@ impl ApprovalVault {
     pub fn approve_policy_update(env: Env, approver: Address, id: u64) -> Result<(), Error> {
         approver.require_auth();
         storage::bump_instance(&env);
-        require_approver(&storage::get_policy(&env), &approver)?;
+        let policy = storage::get_policy(&env);
+        require_approver(&policy, &approver)?;
 
         let mut proposal = storage::get_policy_proposal(&env, id)?;
         require_open(&env, proposal.status, proposal.expires_at)?;
         if proposal.approvals.contains(&approver) {
             return Err(Error::AlreadyApproved);
         }
+        proposal.approvals = current_approvals(&env, &policy, &proposal.approvals);
         proposal.approvals.push_back(approver.clone());
         storage::set_policy_proposal(&env, &proposal);
 
@@ -347,6 +351,19 @@ fn require_future(env: &Env, expires_at: u64) -> Result<(), Error> {
         return Err(Error::InvalidExpiry);
     }
     Ok(())
+}
+
+/// `approvals` minus anyone no longer in the policy. Applied on every approve
+/// so stale entries are dropped and the list stays bounded by `MAX_APPROVERS`
+/// across policy changes.
+fn current_approvals(env: &Env, policy: &Policy, approvals: &Vec<Address>) -> Vec<Address> {
+    let mut kept = Vec::new(env);
+    for a in approvals.iter() {
+        if policy.approvers.contains(&a) {
+            kept.push_back(a);
+        }
+    }
+    kept
 }
 
 /// Approvals that still count: only addresses in the current policy. If the

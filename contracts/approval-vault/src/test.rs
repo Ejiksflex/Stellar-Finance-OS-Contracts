@@ -1414,3 +1414,40 @@ fn proposal_ttl_is_extended_on_access() {
     s.vault.get_proposal(&id);
     assert_eq!(proposal_ttl(&s, id), start);
 }
+
+#[test]
+fn approve_prunes_approvals_from_removed_approvers() {
+    let s = Setup::new();
+    s.fund_vault(1_000);
+    let to = Address::generate(&s.env);
+    let pay = s.propose(&s.approvers[0], &to, 500);
+    s.approve(&s.approvers[1], pay);
+
+    // New policy keeps approvers[1] and approvers[2], drops approvers[0].
+    let new = vec![&s.env, s.approvers[1].clone(), s.approvers[2].clone()];
+    let pol = s.propose_policy(&s.approvers[0], &new, 2);
+    s.try_approve_policy(&s.approvers[1], &s.approvers[1], pol)
+        .unwrap();
+    s.try_update_policy(pol).unwrap();
+
+    s.approve(&s.approvers[2], pay);
+    let expected = events::Approved {
+        proposal_id: pay,
+        approver: s.approvers[2].clone(),
+        approvals: 2,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.vault_id)
+            .events(),
+        [expected.to_xdr(&s.env, &s.vault_id)]
+    );
+    assert_eq!(
+        s.vault.get_proposal(&pay).approvals,
+        vec![&s.env, s.approvers[1].clone(), s.approvers[2].clone()]
+    );
+    // 2 valid approvals meet the new threshold of 2.
+    assert_eq!(s.try_execute(pay), Ok(()));
+}
