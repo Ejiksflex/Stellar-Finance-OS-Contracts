@@ -74,4 +74,5 @@ pub enum Error {
     ArithmeticOverflow = 11,
     TooManyApprovers = 12,
     InsufficientBalance = 13,
+    InvalidToken = 14,
 }

@@ -56,6 +56,8 @@ impl ApprovalVault {
     ///
     /// `memo_ref` is a hash of the backend `PaymentRequest` id.
     /// `expires_at` is a ledger timestamp (seconds) that must be in the future.
+    /// `token` must implement the standard token interface. This is checked
+    /// here so a bad token fails at proposal time, not after approvals.
     pub fn propose(
         env: Env,
         proposer: Address,
@@ -72,6 +74,7 @@ impl ApprovalVault {
             return Err(Error::InvalidAmount);
         }
         require_future(&env, expires_at)?;
+        require_token(&env, &token)?;
 
         let id = storage::next_proposal_id(&env)?;
         storage::set_proposal(
@@ -353,6 +356,14 @@ fn require_future(env: &Env, expires_at: u64) -> Result<(), Error> {
         return Err(Error::InvalidExpiry);
     }
     Ok(())
+}
+
+/// `token` must answer the standard token interface's `decimals()`.
+fn require_token(env: &Env, token: &Address) -> Result<(), Error> {
+    match token::TokenClient::new(env, token).try_decimals() {
+        Ok(Ok(_)) => Ok(()),
+        _ => Err(Error::InvalidToken),
+    }
 }
 
 /// `approvals` minus anyone no longer in the policy. Applied on every approve

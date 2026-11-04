@@ -124,10 +124,30 @@ impl Setup<'_> {
         amount: i128,
         expires_at: u64,
     ) -> Result<u64, Option<Error>> {
+        self.try_propose_token(
+            signer,
+            proposer,
+            &self.token.address,
+            to,
+            amount,
+            expires_at,
+        )
+    }
+
+    /// Like [`Setup::try_propose`], but paying out `token`.
+    fn try_propose_token(
+        &self,
+        signer: &Address,
+        proposer: &Address,
+        token: &Address,
+        to: &Address,
+        amount: i128,
+        expires_at: u64,
+    ) -> Result<u64, Option<Error>> {
         let memo = self.memo(1);
         let args = (
             proposer.clone(),
-            self.token.address.clone(),
+            token.clone(),
             to.clone(),
             amount,
             memo.clone(),
@@ -135,14 +155,10 @@ impl Setup<'_> {
         )
             .into_val(&self.env);
         auth(&self.env, signer, &self.vault_id, "propose", args, &[]);
-        match self.vault.try_propose(
-            proposer,
-            &self.token.address,
-            to,
-            &amount,
-            &memo,
-            &expires_at,
-        ) {
+        match self
+            .vault
+            .try_propose(proposer, token, to, &amount, &memo, &expires_at)
+        {
             Ok(Ok(id)) => Ok(id),
             Err(Ok(e)) => Err(Some(e)),
             _ => Err(None),
@@ -590,6 +606,29 @@ fn propose_rejects_expiry_equal_to_now() {
 }
 
 #[test]
+fn propose_rejects_unknown_token() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    let not_a_token = Address::generate(&s.env);
+    let p = &s.approvers[0];
+    let res = s.try_propose_token(p, p, &not_a_token, &to, 10, NOW + TTL);
+    assert_eq!(res, Err(Some(Error::InvalidToken)));
+}
+
+#[test]
+fn propose_rejects_non_token_contract() {
+    let s = Setup::new();
+    let to = Address::generate(&s.env);
+    // A real contract that does not implement the token interface.
+    let other_vault = s
+        .env
+        .register(ApprovalVault, (vec![&s.env, to.clone()], 1u32));
+    let p = &s.approvers[0];
+    let res = s.try_propose_token(p, p, &other_vault, &to, 10, NOW + TTL);
+    assert_eq!(res, Err(Some(Error::InvalidToken)));
+}
+
+#[test]
 fn get_proposal_rejects_unknown_id() {
     let s = Setup::new();
     assert_eq!(
@@ -795,30 +834,6 @@ fn execute_rejects_insufficient_vault_balance() {
 fn execute_rejects_unknown_proposal() {
     let s = Setup::new();
     assert_eq!(s.try_execute(7), Err(Some(Error::ProposalNotFound)));
-}
-
-#[test]
-fn execute_rejects_unknown_token() {
-    let s = Setup::new();
-    let to = Address::generate(&s.env);
-    let not_a_token = Address::generate(&s.env);
-    let memo = s.memo(1);
-    let args = (
-        s.approvers[0].clone(),
-        not_a_token.clone(),
-        to.clone(),
-        10i128,
-        memo.clone(),
-        NOW + TTL,
-    )
-        .into_val(&s.env);
-    auth(&s.env, &s.approvers[0], &s.vault_id, "propose", args, &[]);
-    let id = s
-        .vault
-        .propose(&s.approvers[0], &not_a_token, &to, &10, &memo, &(NOW + TTL));
-    s.approve(&s.approvers[1], id);
-    assert_eq!(s.try_execute(id), Err(None));
-    assert_eq!(s.vault.get_proposal(&id).status, ProposalStatus::Pending);
 }
 
 #[test]
