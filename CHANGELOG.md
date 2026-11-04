@@ -8,6 +8,9 @@ event shape or error code is a **major** bump.
 ## [Unreleased]
 
 ### Added
+- `approval-vault` error 14 `InvalidToken`: `propose` now rejects a `token`
+  that does not implement the token interface, instead of letting the
+  proposal collect approvals and fail in `execute` with a host error.
 - `approval-vault`: constructor, `deposit`, `propose`, `approve`, `execute`,
   `cancel`, `propose_policy_update`, `approve_policy_update`, `update_policy`,
   `cancel_policy_update`, and views `get_policy`, `get_proposal`,
