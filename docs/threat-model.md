@@ -36,7 +36,7 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | V7 | Policy bricked (threshold > approvers, empty set) | `validate_policy` on construction and on every policy proposal | `constructor_rejects_*`, `propose_policy_update_rejects_*`, property test `policy_validation_matches_spec` |
 | V8 | Unbounded approver set exhausts resource limits | `MAX_APPROVERS = 20` | `constructor_rejects_too_many_approvers` |
 | V9 | Re-entrancy through a malicious token | State is written before the external `transfer`; Soroban also forbids re-entering the same contract | Code review (ordering in `execute`) |
-| V10 | Malicious `token` on a proposal | Approvers approve the full proposal, including `token`. Only vault-held balances of that token can move | `execute_rejects_unknown_token` |
+| V10 | Malicious or bogus `token` on a proposal | `propose` rejects addresses that do not answer `decimals()`. Approvers approve the full proposal, including `token`, and only vault-held balances of that token can move | `propose_rejects_unknown_token`, `propose_rejects_non_token_contract` |
 | V11 | Proposal archived (TTL) while still needed | Every read/write bumps it to 30 days; archived entries can be restored | `proposal_ttl_is_extended_on_*` |
 | V12 | Id overflow | `checked_add` on `NextProposalId` | Code review |
 | V13 | Two approved proposals together overspend the vault | Each `execute` re-checks the live balance; the second one fails and stays Pending | `two_proposals_cannot_overspend_vault`, `insufficient_balance_proposal_executes_after_top_up` |
