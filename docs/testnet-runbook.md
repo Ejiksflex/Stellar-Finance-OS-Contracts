@@ -74,6 +74,7 @@ Failure checks worth doing by hand:
 | `bob` approves proposal 0 twice | `#7 AlreadyApproved` |
 | propose with `--expires_at` in the past | `#9 InvalidExpiry` |
 | propose more than the vault holds, approve, execute | `#13 InsufficientBalance` |
+| propose with `--token` set to an account address | `#14 InvalidToken` |
 
 ## 4. Vault: change the approver set
 
