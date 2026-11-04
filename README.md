@@ -185,6 +185,7 @@ A proposal is **expired** once the ledger timestamp is at or past `expires_at`. 
 - **Payment and policy proposals share one id sequence**, so a `proposal_id` in an event is never ambiguous.
 - **`execute` checks the vault balance first** and fails with `InsufficientBalance` instead of a host error.
 - **`expires_at` must be in the future** when proposing.
+- **`token` must be a real token contract.** `propose` checks it answers `decimals()`, so a bad token fails before anyone approves.
 
 ### Events
 
@@ -216,6 +217,7 @@ Topics: `[<event name>, proposal_id]`. Data: a map of the fields below.
 | 11 | `ArithmeticOverflow` | Id counter overflow |
 | 12 | `TooManyApprovers` | More than 20 approvers |
 | 13 | `InsufficientBalance` | Vault holds less than the proposal amount |
+| 14 | `InvalidToken` | `token` doesn't implement the token interface |
 
 ### Example (Stellar CLI)
 
