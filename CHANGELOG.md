@@ -7,6 +7,20 @@ event shape or error code is a **major** bump.
 
 ## [Unreleased]
 
+### Breaking
+- `invoice-registry`: invoices are keyed by `(business, id)` instead of `id`
+  alone, closing invoice-id squatting (a third party registering an `id` first
+  could receive payments meant for the real business).
+  - `pay(payer, id, amount)` → `pay(payer, business, id, amount)`.
+  - `get(id)` → `get(business, id)`.
+  - `register` and `void` keep their signatures; `register` returns
+    `InvoiceExists` only when the same business re-registers the same `id`,
+    and `void` on another business's invoice now returns `InvoiceNotFound`.
+  - `paid` and `voided` events gain a `business` data field (topics unchanged).
+  - Error 9 `NotBusiness` is reserved and no longer returned.
+  - The indexer must key invoices on `(business, id)`. Generated bindings
+    need regenerating (`./scripts/bindings.sh`).
+
 ### Added
 - `approval-vault` error 14 `InvalidToken`: `propose` now rejects a `token`
   that does not implement the token interface, instead of letting the

@@ -79,18 +79,19 @@ impl Setup<'_> {
         &self,
         signer: &Address,
         payer: &Address,
+        business: &Address,
         id: &BytesN<32>,
         amount: i128,
     ) -> Result<(), Option<Error>> {
-        let args = (payer.clone(), id.clone(), amount).into_val(&self.env);
+        let args = (payer.clone(), business.clone(), id.clone(), amount).into_val(&self.env);
         let sub = [MockAuthInvoke {
             contract: &self.token.address,
             fn_name: "transfer",
-            args: (payer.clone(), self.business.clone(), amount).into_val(&self.env),
+            args: (payer.clone(), business.clone(), amount).into_val(&self.env),
             sub_invokes: &[],
         }];
         auth(&self.env, signer, &self.registry_id, "pay", args, &sub);
-        match self.registry.try_pay(payer, id, &amount) {
+        match self.registry.try_pay(payer, business, id, &amount) {
             Ok(Ok(())) => Ok(()),
             Err(Ok(e)) => Err(Some(e)),
             _ => Err(None),
@@ -98,7 +99,8 @@ impl Setup<'_> {
     }
 
     fn pay(&self, payer: &Address, id: &BytesN<32>, amount: i128) {
-        self.try_pay(payer, payer, id, amount).expect("pay ok");
+        self.try_pay(payer, payer, &self.business, id, amount)
+            .expect("pay ok");
     }
 
     fn try_void(
@@ -182,7 +184,7 @@ fn auth(
 #[test]
 fn get_unknown_invoice_returns_not_found() {
     let s = Setup::new();
-    let res = s.registry.try_get(&s.hash(7));
+    let res = s.registry.try_get(&s.business, &s.hash(7));
     assert_eq!(res, Err(Ok(Error::InvoiceNotFound)));
 }
 
@@ -192,7 +194,7 @@ fn get_unknown_invoice_returns_not_found() {
 fn register_creates_open_invoice() {
     let s = Setup::new();
     let id = s.register(1, 500);
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!(inv.id, id);
     assert_eq!(inv.business, s.business);
     assert_eq!(inv.token, s.token.address);
@@ -230,19 +232,21 @@ fn register_rejects_duplicate_id() {
         s.try_register(&s.business, &s.business, &id, &s.token.address, 900),
         Err(Some(Error::InvoiceExists))
     );
-    assert_eq!(s.registry.get(&id).amount, 500);
+    assert_eq!(s.registry.get(&s.business, &id).amount, 500);
 }
 
 #[test]
-fn register_rejects_duplicate_id_from_other_business() {
+fn register_same_id_from_other_business_is_independent() {
     let s = Setup::new();
     let id = s.register(1, 500);
     let other = Address::generate(&s.env);
+    // Same id under a different business is a different invoice.
     assert_eq!(
         s.try_register(&other, &other, &id, &s.token.address, 1),
-        Err(Some(Error::InvoiceExists))
+        Ok(())
     );
-    assert_eq!(s.registry.get(&id).business, s.business);
+    assert_eq!(s.registry.get(&s.business, &id).amount, 500);
+    assert_eq!(s.registry.get(&other, &id).amount, 1);
 }
 
 #[test]
@@ -274,7 +278,10 @@ fn register_rejects_wrong_signer() {
         s.try_register(&attacker, &s.business, &id, &s.token.address, 10),
         Err(None)
     );
-    assert_eq!(s.registry.try_get(&id), Err(Ok(Error::InvoiceNotFound)));
+    assert_eq!(
+        s.registry.try_get(&s.business, &id),
+        Err(Ok(Error::InvoiceNotFound))
+    );
 }
 
 #[test]
@@ -312,7 +319,7 @@ fn pay_in_full_transfers_and_marks_paid() {
     assert_eq!(s.token.balance(&payer), 500);
     assert_eq!(s.token.balance(&s.business), 500);
     assert_eq!(s.token.balance(&s.registry_id), 0);
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!(inv.paid, 500);
     assert_eq!(inv.status, InvoiceStatus::Paid);
 }
@@ -325,6 +332,7 @@ fn pay_emits_paid_event() {
     s.pay(&payer, &id, 200);
     let expected = events::Paid {
         id,
+        business: s.business.clone(),
         payer,
         amount: 200,
         total_paid: 200,
@@ -346,16 +354,17 @@ fn partial_payments_accumulate_until_paid() {
     let payer = s.payer(1_000);
 
     s.pay(&payer, &id, 200);
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!((inv.paid, inv.status), (200, InvoiceStatus::Open));
 
     s.pay(&payer, &id, 250);
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!((inv.paid, inv.status), (450, InvoiceStatus::Open));
 
     s.pay(&payer, &id, 50);
     let expected = events::Paid {
         id: id.clone(),
+        business: s.business.clone(),
         payer: payer.clone(),
         amount: 50,
         total_paid: 500,
@@ -368,7 +377,7 @@ fn partial_payments_accumulate_until_paid() {
             .events(),
         [expected.to_xdr(&s.env, &s.registry_id)]
     );
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!((inv.paid, inv.status), (500, InvoiceStatus::Paid));
     assert_eq!(s.token.balance(&s.business), 500);
 }
@@ -381,7 +390,7 @@ fn multiple_payers_can_settle_one_invoice() {
     let b = s.payer(200);
     s.pay(&a, &id, 100);
     s.pay(&b, &id, 200);
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Paid);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Paid);
     assert_eq!(s.token.balance(&s.business), 300);
 }
 
@@ -391,11 +400,11 @@ fn pay_rejects_overpayment_in_one_go() {
     let id = s.register(1, 500);
     let payer = s.payer(1_000);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, 501),
+        s.try_pay(&payer, &payer, &s.business, &id, 501),
         Err(Some(Error::Overpayment))
     );
     assert_eq!(s.token.balance(&payer), 1_000);
-    assert_eq!(s.registry.get(&id).paid, 0);
+    assert_eq!(s.registry.get(&s.business, &id).paid, 0);
 }
 
 #[test]
@@ -405,10 +414,10 @@ fn pay_rejects_overpayment_after_partial() {
     let payer = s.payer(1_000);
     s.pay(&payer, &id, 400);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, 101),
+        s.try_pay(&payer, &payer, &s.business, &id, 101),
         Err(Some(Error::Overpayment))
     );
-    assert_eq!(s.registry.get(&id).paid, 400);
+    assert_eq!(s.registry.get(&s.business, &id).paid, 400);
 }
 
 #[test]
@@ -417,7 +426,10 @@ fn pay_rejects_paid_invoice() {
     let id = s.register(1, 500);
     let payer = s.payer(1_000);
     s.pay(&payer, &id, 500);
-    assert_eq!(s.try_pay(&payer, &payer, &id, 1), Err(Some(Error::NotOpen)));
+    assert_eq!(
+        s.try_pay(&payer, &payer, &s.business, &id, 1),
+        Err(Some(Error::NotOpen))
+    );
 }
 
 #[test]
@@ -426,7 +438,7 @@ fn pay_rejects_zero_amount() {
     let id = s.register(1, 500);
     let payer = s.payer(1_000);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, 0),
+        s.try_pay(&payer, &payer, &s.business, &id, 0),
         Err(Some(Error::InvalidAmount))
     );
 }
@@ -437,7 +449,7 @@ fn pay_rejects_negative_amount() {
     let id = s.register(1, 500);
     let payer = s.payer(1_000);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, -1),
+        s.try_pay(&payer, &payer, &s.business, &id, -1),
         Err(Some(Error::InvalidAmount))
     );
 }
@@ -447,7 +459,7 @@ fn pay_rejects_unknown_invoice() {
     let s = Setup::new();
     let payer = s.payer(1_000);
     assert_eq!(
-        s.try_pay(&payer, &payer, &s.hash(9), 1),
+        s.try_pay(&payer, &payer, &s.business, &s.hash(9), 1),
         Err(Some(Error::InvoiceNotFound))
     );
 }
@@ -458,9 +470,12 @@ fn pay_rejects_wrong_signer() {
     let id = s.register(1, 500);
     let victim = s.payer(1_000);
     let attacker = Address::generate(&s.env);
-    assert_eq!(s.try_pay(&attacker, &victim, &id, 500), Err(None));
+    assert_eq!(
+        s.try_pay(&attacker, &victim, &s.business, &id, 500),
+        Err(None)
+    );
     assert_eq!(s.token.balance(&victim), 1_000);
-    assert_eq!(s.registry.get(&id).paid, 0);
+    assert_eq!(s.registry.get(&s.business, &id).paid, 0);
 }
 
 #[test]
@@ -468,9 +483,9 @@ fn pay_fails_atomically_with_insufficient_funds() {
     let s = Setup::new();
     let id = s.register(1, 500);
     let payer = s.payer(100);
-    assert_eq!(s.try_pay(&payer, &payer, &id, 200), Err(None));
+    assert_eq!(s.try_pay(&payer, &payer, &s.business, &id, 200), Err(None));
     // State update is rolled back with the failed transfer.
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!((inv.paid, inv.status), (0, InvoiceStatus::Open));
 }
 
@@ -481,7 +496,7 @@ fn pay_rejects_overflowing_total() {
     let payer = s.payer(i128::MAX);
     s.pay(&payer, &id, i128::MAX - 1);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, i128::MAX),
+        s.try_pay(&payer, &payer, &s.business, &id, i128::MAX),
         Err(Some(Error::ArithmeticOverflow))
     );
 }
@@ -493,7 +508,10 @@ fn void_marks_void_and_emits_event() {
     let s = Setup::new();
     let id = s.register(1, 500);
     assert_eq!(s.try_void(&s.business, &s.business, &id), Ok(()));
-    let expected = events::Voided { id: id.clone() };
+    let expected = events::Voided {
+        id: id.clone(),
+        business: s.business.clone(),
+    };
     assert_eq!(
         s.env
             .events()
@@ -502,7 +520,7 @@ fn void_marks_void_and_emits_event() {
             .events(),
         [expected.to_xdr(&s.env, &s.registry_id)]
     );
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Void);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Void);
 }
 
 #[test]
@@ -512,7 +530,7 @@ fn void_blocks_payment() {
     s.try_void(&s.business, &s.business, &id).unwrap();
     let payer = s.payer(1_000);
     assert_eq!(
-        s.try_pay(&payer, &payer, &id, 100),
+        s.try_pay(&payer, &payer, &s.business, &id, 100),
         Err(Some(Error::NotOpen))
     );
     assert_eq!(s.token.balance(&payer), 1_000);
@@ -528,7 +546,7 @@ fn void_rejects_after_partial_payment() {
         s.try_void(&s.business, &s.business, &id),
         Err(Some(Error::AlreadyPaid))
     );
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Open);
 }
 
 #[test]
@@ -555,15 +573,15 @@ fn void_rejects_already_void() {
 }
 
 #[test]
-fn void_rejects_other_business() {
+fn void_cannot_reach_other_business_invoice() {
     let s = Setup::new();
     let id = s.register(1, 500);
     let other = Address::generate(&s.env);
     assert_eq!(
         s.try_void(&other, &other, &id),
-        Err(Some(Error::NotBusiness))
+        Err(Some(Error::InvoiceNotFound))
     );
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Open);
 }
 
 #[test]
@@ -572,7 +590,7 @@ fn void_rejects_wrong_signer() {
     let id = s.register(1, 500);
     let attacker = Address::generate(&s.env);
     assert_eq!(s.try_void(&attacker, &s.business, &id), Err(None));
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Open);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Open);
 }
 
 #[test]
@@ -591,7 +609,10 @@ fn invoice_ttl(s: &Setup, id: &BytesN<32>) -> u32 {
         s.env
             .storage()
             .persistent()
-            .get_ttl(&crate::storage::DataKey::Invoice(id.clone()))
+            .get_ttl(&crate::storage::DataKey::Invoice(
+                s.business.clone(),
+                id.clone(),
+            ))
     })
 }
 
@@ -610,7 +631,7 @@ fn invoice_ttl_is_extended_on_access() {
     let step = 2 * finance_os_common::ttl::DAY_IN_LEDGERS;
     s.env.ledger().with_mut(|l| l.sequence_number += step);
     assert!(invoice_ttl(&s, &id) < finance_os_common::ttl::PERSISTENT_LIFETIME_THRESHOLD);
-    s.registry.get(&id);
+    s.registry.get(&s.business, &id);
     assert_eq!(invoice_ttl(&s, &id), start);
 }
 
@@ -623,8 +644,8 @@ fn invoices_are_independent() {
     let b = s.register(2, 200);
     let payer = s.payer(1_000);
     s.pay(&payer, &a, 100);
-    assert_eq!(s.registry.get(&a).status, InvoiceStatus::Paid);
-    let inv_b = s.registry.get(&b);
+    assert_eq!(s.registry.get(&s.business, &a).status, InvoiceStatus::Paid);
+    let inv_b = s.registry.get(&s.business, &b);
     assert_eq!((inv_b.paid, inv_b.status), (0, InvoiceStatus::Open));
 }
 
@@ -636,7 +657,7 @@ fn voiding_one_invoice_leaves_others_payable() {
     s.try_void(&s.business, &s.business, &a).unwrap();
     let payer = s.payer(100);
     s.pay(&payer, &b, 100);
-    assert_eq!(s.registry.get(&b).status, InvoiceStatus::Paid);
+    assert_eq!(s.registry.get(&s.business, &b).status, InvoiceStatus::Paid);
 }
 
 #[test]
@@ -646,8 +667,8 @@ fn same_content_hash_may_back_different_ids() {
     s.register(1, 100);
     s.register(2, 100);
     assert_eq!(
-        s.registry.get(&s.hash(1)).content_hash,
-        s.registry.get(&s.hash(2)).content_hash
+        s.registry.get(&s.business, &s.hash(1)).content_hash,
+        s.registry.get(&s.business, &s.hash(2)).content_hash
     );
 }
 
@@ -657,7 +678,7 @@ fn business_can_pay_its_own_invoice() {
     let id = s.register(1, 100);
     s.mint(&s.business, 100);
     s.pay(&s.business, &id, 100);
-    assert_eq!(s.registry.get(&id).status, InvoiceStatus::Paid);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Paid);
     assert_eq!(s.token.balance(&s.business), 100);
 }
 
@@ -678,7 +699,7 @@ fn invoices_in_different_tokens_settle_in_their_own_token() {
     auth(&s.env, &other_admin, &other.address(), "mint", args, &[]);
     StellarAssetClient::new(&s.env, &other.address()).mint(&payer, &40);
 
-    let args = (payer.clone(), id.clone(), 40i128).into_val(&s.env);
+    let args = (payer.clone(), s.business.clone(), id.clone(), 40i128).into_val(&s.env);
     let sub = [MockAuthInvoke {
         contract: &other.address(),
         fn_name: "transfer",
@@ -686,7 +707,7 @@ fn invoices_in_different_tokens_settle_in_their_own_token() {
         sub_invokes: &[],
     }];
     auth(&s.env, &payer, &s.registry_id, "pay", args, &sub);
-    s.registry.pay(&payer, &id, &40);
+    s.registry.pay(&payer, &s.business, &id, &40);
 
     assert_eq!(other_token.balance(&s.business), 40);
     assert_eq!(s.token.balance(&s.business), 0);
@@ -697,7 +718,7 @@ fn get_returns_void_invoice() {
     let s = Setup::new();
     let id = s.register(1, 100);
     s.try_void(&s.business, &s.business, &id).unwrap();
-    let inv = s.registry.get(&id);
+    let inv = s.registry.get(&s.business, &id);
     assert_eq!(
         (inv.status, inv.paid, inv.amount),
         (InvoiceStatus::Void, 0, 100)
@@ -712,6 +733,134 @@ fn void_does_not_free_the_id_for_reuse() {
     assert_eq!(
         s.try_register(&s.business, &s.business, &id, &s.token.address, 100),
         Err(Some(Error::InvoiceExists))
+    );
+}
+
+// ---------------------------------------------------------------- id squatting (issue #3)
+
+/// Mint to a payer and pay `(business, id)`, for tests with several businesses.
+fn pay_to(s: &Setup, payer: &Address, business: &Address, id: &BytesN<32>, amount: i128) {
+    s.try_pay(payer, payer, business, id, amount)
+        .expect("pay ok");
+}
+
+#[test]
+fn two_businesses_can_register_the_same_id_independently() {
+    let s = Setup::new();
+    let id = s.hash(1);
+    let other = Address::generate(&s.env);
+    s.try_register(&s.business, &s.business, &id, &s.token.address, 500)
+        .unwrap();
+    s.try_register(&other, &other, &id, &s.token.address, 70)
+        .unwrap();
+    let a = s.registry.get(&s.business, &id);
+    let b = s.registry.get(&other, &id);
+    assert_eq!((a.business, a.amount), (s.business.clone(), 500));
+    assert_eq!((b.business, b.amount), (other.clone(), 70));
+    // Voiding one leaves the other untouched.
+    s.try_void(&other, &other, &id).unwrap();
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Open);
+    assert_eq!(s.registry.get(&other, &id).status, InvoiceStatus::Void);
+}
+
+#[test]
+fn squatter_cannot_receive_payment_meant_for_real_business() {
+    let s = Setup::new();
+    let id = s.hash(1);
+    let attacker = Address::generate(&s.env);
+    // Attacker registers the id first, for a bigger amount.
+    s.try_register(&attacker, &attacker, &id, &s.token.address, 500)
+        .unwrap();
+    // The real business can still register the same id.
+    s.try_register(&s.business, &s.business, &id, &s.token.address, 500)
+        .unwrap();
+
+    let client = s.payer(500);
+    pay_to(&s, &client, &s.business, &id, 500);
+
+    assert_eq!(s.token.balance(&s.business), 500);
+    assert_eq!(s.token.balance(&attacker), 0);
+    assert_eq!(s.registry.get(&attacker, &id).paid, 0);
+    assert_eq!(s.registry.get(&s.business, &id).status, InvoiceStatus::Paid);
+}
+
+#[test]
+fn paying_a_business_that_never_registered_the_id_fails() {
+    let s = Setup::new();
+    let id = s.hash(1);
+    let attacker = Address::generate(&s.env);
+    // Only the attacker registered this id; the client pays the real business.
+    s.try_register(&attacker, &attacker, &id, &s.token.address, 500)
+        .unwrap();
+    let client = s.payer(500);
+    assert_eq!(
+        s.try_pay(&client, &client, &s.business, &id, 500),
+        Err(Some(Error::InvoiceNotFound))
+    );
+    assert_eq!(s.token.balance(&client), 500);
+    assert_eq!(s.token.balance(&attacker), 0);
+}
+
+#[test]
+fn register_duplicate_error_only_for_same_business() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let other = Address::generate(&s.env);
+    assert_eq!(
+        s.try_register(&s.business, &s.business, &id, &s.token.address, 1),
+        Err(Some(Error::InvoiceExists))
+    );
+    assert_eq!(
+        s.try_register(&other, &other, &id, &s.token.address, 1),
+        Ok(())
+    );
+}
+
+#[test]
+fn get_unknown_business_returns_not_found() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let other = Address::generate(&s.env);
+    assert_eq!(
+        s.registry.try_get(&other, &id),
+        Err(Ok(Error::InvoiceNotFound))
+    );
+}
+
+#[test]
+fn paid_and_voided_events_carry_business() {
+    let s = Setup::new();
+    let id = s.register(1, 500);
+    let payer = s.payer(100);
+    s.pay(&payer, &id, 100);
+    let paid = events::Paid {
+        id: id.clone(),
+        business: s.business.clone(),
+        payer,
+        amount: 100,
+        total_paid: 100,
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.registry_id)
+            .events(),
+        [paid.to_xdr(&s.env, &s.registry_id)]
+    );
+    let id2 = s.register(2, 500);
+    s.try_void(&s.business, &s.business, &id2).unwrap();
+    let voided = events::Voided {
+        id: id2,
+        business: s.business.clone(),
+    };
+    assert_eq!(
+        s.env
+            .events()
+            .all()
+            .filter_by_contract(&s.registry_id)
+            .events(),
+        [voided.to_xdr(&s.env, &s.registry_id)]
     );
 }
 
@@ -740,7 +889,7 @@ fn pay_requires_payer_auth_for_pay_and_nested_transfer() {
     let id = s.register(1, 100);
     let payer = s.payer(100);
     s.pay(&payer, &id, 60);
-    let pay_args = (payer.clone(), id, 60i128).into_val(&s.env);
+    let pay_args = (payer.clone(), s.business.clone(), id, 60i128).into_val(&s.env);
     let transfer_args = (payer.clone(), s.business.clone(), 60i128).into_val(&s.env);
     assert_eq!(
         s.env.auths(),
@@ -807,6 +956,7 @@ fn event_topic_xdr_matches_docs() {
         (
             events::Paid {
                 id: id.clone(),
+                business: a.clone(),
                 payer: a.clone(),
                 amount: 1,
                 total_paid: 1
@@ -815,7 +965,11 @@ fn event_topic_xdr_matches_docs() {
             "AAAADwAAAARwYWlk",
         ),
         (
-            events::Voided { id: id.clone() }.to_xdr(&env, &contract),
+            events::Voided {
+                id: id.clone(),
+                business: a.clone()
+            }
+            .to_xdr(&env, &contract),
             "AAAADwAAAAZ2b2lkZWQAAA=="
         ),
     ];

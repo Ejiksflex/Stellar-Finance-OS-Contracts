@@ -13,8 +13,8 @@ Every event is a Soroban contract event with:
   - vault: `<id>` is `U64(proposal_id)`
   - registry: `<id>` is `Bytes(32)` (the invoice id hash)
 - **data**: an `ScMap` keyed by `Symbol(<field name>)`, holding the remaining
-  fields in alphabetical key order. Events with no data fields (`executed`,
-  `voided`) carry an empty map.
+  fields in alphabetical key order. Events with no data fields (`executed`)
+  carry an empty map.
 
 ## Topic filters
 
@@ -74,8 +74,8 @@ contract), so this table can't silently drift from the code.
 | Event | Fields (ScVal type) |
 |---|---|
 | `registered` | `amount` (I128), `business` (Address), `token` (Address) |
-| `paid` | `amount` (I128), `payer` (Address), `total_paid` (I128) |
-| `voided` | (none) |
+| `paid` | `amount` (I128), `business` (Address), `payer` (Address), `total_paid` (I128) |
+| `voided` | `business` (Address) |
 
 ## Mirroring rules
 
@@ -89,9 +89,10 @@ contract), so this table can't silently drift from the code.
 
 **Invoices**
 
+- An invoice is identified by `(business, id)`; the same `id` can exist under several businesses. Key your records on both.
 - `registered`: create the record (Open).
-- `paid`: set `paid = total_paid`. Mark Paid when `total_paid` equals the registered `amount`.
-- `voided`: mark Void.
+- `paid`: look up `(business, id)` and set `paid = total_paid`. Mark Paid when `total_paid` equals the registered `amount`.
+- `voided`: look up `(business, id)` and mark Void.
 
 **Trust**
 

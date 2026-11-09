@@ -62,7 +62,7 @@ proptest! {
         registry.register(&business, &id, &token.address, &amount, &content);
 
         for a in attempts {
-            let args = (payer.clone(), id.clone(), a).into_val(&env);
+            let args = (payer.clone(), business.clone(), id.clone(), a).into_val(&env);
             let sub = [MockAuthInvoke {
                 contract: &token.address,
                 fn_name: "transfer",
@@ -70,12 +70,71 @@ proptest! {
                 sub_invokes: &[],
             }];
             mock(&env, &payer, &registry_id, "pay", args, &sub);
-            let _ = registry.try_pay(&payer, &id, &a);
+            let _ = registry.try_pay(&payer, &business, &id, &a);
 
-            let inv = registry.get(&id);
+            let inv = registry.get(&business, &id);
             prop_assert!(inv.paid >= 0 && inv.paid <= inv.amount);
             prop_assert_eq!(token.balance(&business), inv.paid);
             prop_assert_eq!(inv.status == InvoiceStatus::Paid, inv.paid == inv.amount);
+        }
+    }
+
+    /// For any two businesses sharing one invoice id and any payment
+    /// sequence aimed at `honest`: only `honest` is ever credited, and the
+    /// other business's invoice and balance never change.
+    #[test]
+    fn payments_only_credit_the_named_business(
+        amount_honest in 1i128..1_000,
+        amount_squat in 1i128..1_000,
+        attempts in proptest::collection::vec(-5i128..400, 1..12),
+        squat_first in any::<bool>(),
+    ) {
+        let env = Env::default();
+        let registry_id = env.register(InvoiceRegistry, ());
+        let registry = InvoiceRegistryClient::new(&env, &registry_id);
+        let admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(admin.clone());
+        let token = TokenClient::new(&env, &sac.address());
+        let honest = Address::generate(&env);
+        let squatter = Address::generate(&env);
+        let payer = Address::generate(&env);
+
+        let mint_args = (payer.clone(), 10_000i128).into_val(&env);
+        mock(&env, &admin, &token.address, "mint", mint_args, &[]);
+        StellarAssetClient::new(&env, &token.address).mint(&payer, &10_000);
+
+        let id = BytesN::from_array(&env, &[1; 32]);
+        let content = BytesN::from_array(&env, &[2; 32]);
+        let register = |who: &Address, amt: i128| {
+            let args = (who.clone(), id.clone(), token.address.clone(), amt, content.clone()).into_val(&env);
+            mock(&env, who, &registry_id, "register", args, &[]);
+            registry.register(who, &id, &token.address, &amt, &content);
+        };
+        if squat_first {
+            register(&squatter, amount_squat);
+            register(&honest, amount_honest);
+        } else {
+            register(&honest, amount_honest);
+            register(&squatter, amount_squat);
+        }
+
+        for a in attempts {
+            let args = (payer.clone(), honest.clone(), id.clone(), a).into_val(&env);
+            let sub = [MockAuthInvoke {
+                contract: &token.address,
+                fn_name: "transfer",
+                args: (payer.clone(), honest.clone(), a).into_val(&env),
+                sub_invokes: &[],
+            }];
+            mock(&env, &payer, &registry_id, "pay", args, &sub);
+            let _ = registry.try_pay(&payer, &honest, &id, &a);
+
+            let h = registry.get(&honest, &id);
+            let sq = registry.get(&squatter, &id);
+            prop_assert_eq!(token.balance(&honest), h.paid);
+            prop_assert_eq!(token.balance(&squatter), 0);
+            prop_assert_eq!(sq.paid, 0);
+            prop_assert_eq!(sq.status, InvoiceStatus::Open);
         }
     }
 }

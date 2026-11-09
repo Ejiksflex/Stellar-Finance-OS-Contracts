@@ -47,21 +47,21 @@ Status: **pre-audit, testnet only.** Not upgradeable (no `update_current_contrac
 | # | Threat | Mitigation | Test(s) |
 |---|---|---|---|
 | R1 | Registering an invoice for someone else's business | `business.require_auth()` | `register_rejects_wrong_signer` |
-| R2 | Overwriting an existing invoice | `InvoiceExists` on a duplicate id | `register_rejects_duplicate_id*` |
+| R2 | Invoice-id squatting redirects client payments | Invoices are keyed by `(business, id)` and `pay` names the business. A squatter registering the same `id` creates a different invoice; `pay(client, acme, id, x)` can only credit `acme`. `InvoiceExists` is returned only when the same business re-registers an id | `squatter_cannot_receive_payment_meant_for_real_business`, `paying_a_business_that_never_registered_the_id_fails`, `two_businesses_can_register_the_same_id_independently`, `register_duplicate_error_only_for_same_business`, `register_rejects_duplicate_id`, property test `payments_only_credit_the_named_business` |
 | R3 | Invoice marked Paid without funds moving | State and transfer happen in one transaction, and a failed transfer reverts everything | `pay_fails_atomically_with_insufficient_funds` |
 | R4 | Overpayment locks extra funds / skews accounting | `Overpayment` once `paid + amount > amount` | `pay_rejects_overpayment_*`, property test `paid_never_exceeds_amount` |
 | R5 | Paying from someone else's account | `payer.require_auth()`; the transfer is from `payer` | `pay_rejects_wrong_signer` |
 | R6 | Voiding a partly paid invoice (hides received funds) | `AlreadyPaid` when `paid != 0` | `void_rejects_after_partial_payment` |
-| R7 | Another business voids my invoice | `NotBusiness` | `void_rejects_other_business` |
+| R7 | Another business voids my invoice | `void` looks up `(business, id)` under the signing business, so another business's invoice is `InvoiceNotFound` | `void_cannot_reach_other_business_invoice` |
 | R8 | Fake token registered so the "paid" events are worthless | `register` checks `decimals()`, but a malicious token contract still passes. **The indexer must only trust `paid` events for allow-listed token addresses** | `register_rejects_unknown_token`, `register_rejects_non_token_contract` |
 | R9 | i128 overflow on `paid` | `checked_add` → `ArithmeticOverflow` | `pay_rejects_overflowing_total` |
 | R10 | PII on-chain | Only hashes and amounts are stored (`id`, `content_hash`) | Design / backend responsibility |
-| R11 | Reusing a voided id makes events ambiguous | Ids are never freed; `InvoiceExists` even after `void` | `void_does_not_free_the_id_for_reuse` |
+| R11 | Reusing a voided id makes events ambiguous | Ids are never freed per business; `InvoiceExists` even after `void` | `void_does_not_free_the_id_for_reuse` |
 
 ## Residual risks and open items
 
 1. **Token trust (R8, V10).** The contracts accept any token address. Downstream systems must allow-list token contract IDs, e.g. testnet/mainnet USDC SAC.
-2. **Front-running invoice ids.** Anyone who learns an `id` hash before registration can register it first under their own business, blocking the real one. Mitigation: the backend should derive `id` from a secret salt, or include the business address in the hash preimage.
+2. **Invoice-id squatting (downgraded).** Fixed for payment safety by the `(business, id)` key (R2). Residual: anyone can register invoices under their own address, which is only clutter. The indexer and clients must always carry the intended `business`; a client who pays a *different* business address than the one on their invoice pays that address. Backend salting remains good hygiene.
 3. **Vault as payee.** Invoices pay the `business` address directly. Routing payments to an approval vault would need a separate `payee` field.
 4. **Approver key loss.** If enough approvers lose keys that `threshold` can't be reached, funds are stuck. This is operational: keep `threshold < approvers.len()` to leave headroom.
 5. **No upgrade path.** This is intentional for v1 (README §5). Bugs require redeploying and migrating funds through a normal proposal.

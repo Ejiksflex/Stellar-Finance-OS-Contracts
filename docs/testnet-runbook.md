@@ -91,14 +91,14 @@ INV $VAULT bob get_policy            # carol is gone; threshold 2
 
 ```bash
 REG=invoice-registry
-ID=$(printf 'invoice-0001' | sha256sum | cut -d' ' -f1)
+ID=$(printf 'invoice-0001:%s' "$INVOICE_ID_SALT" | sha256sum | cut -d' ' -f1)
 DOC=$(printf 'invoice-0001-pdf-bytes' | sha256sum | cut -d' ' -f1)
 
 INV $REG acme register --business acme --id $ID --token $TOKEN --amount 50000000 --content_hash $DOC
-INV $REG client pay --payer client --id $ID --amount 20000000
-INV $REG client get --id $ID         # paid 20000000, status Open
-INV $REG client pay --payer client --id $ID --amount 40000000   # #5 Overpayment
-INV $REG client pay --payer client --id $ID --amount 30000000   # status Paid
+INV $REG client pay --payer client --business acme --id $ID --amount 20000000
+INV $REG client get --business acme --id $ID         # paid 20000000, status Open
+INV $REG client pay --payer client --business acme --id $ID --amount 40000000   # #5 Overpayment
+INV $REG client pay --payer client --business acme --id $ID --amount 30000000   # status Paid
 INV $REG acme void --business acme --id $ID                      # #4 NotOpen
 ```
 

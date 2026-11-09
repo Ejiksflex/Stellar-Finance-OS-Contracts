@@ -5,6 +5,8 @@
 //! and bump the major version.
 //!
 //! Topic layout: `[<event_name>, id]`. The event name is the struct name in snake_case.
+//! An invoice is identified by `(business, id)`: every event carries `business`
+//! in its data, so the indexer must key on both.
 
 use soroban_sdk::{contractevent, Address, BytesN};
 
@@ -23,6 +25,7 @@ pub struct Registered {
 pub struct Paid {
     #[topic]
     pub id: BytesN<32>,
+    pub business: Address,
     pub payer: Address,
     pub amount: i128,
     pub total_paid: i128,
@@ -33,4 +36,5 @@ pub struct Paid {
 pub struct Voided {
     #[topic]
     pub id: BytesN<32>,
+    pub business: Address,
 }

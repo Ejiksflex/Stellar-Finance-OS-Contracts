@@ -16,7 +16,8 @@ pub enum InvoiceStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Invoice {
-    /// Backend-generated hash identifying the invoice.
+    /// Backend-generated hash identifying the invoice. Unique per `business`,
+    /// not globally.
     pub id: BytesN<32>,
     /// Payee, and the only address that may void the invoice. Must be able to
     /// sign `register` and `void`, so vault-as-payee is not supported yet
@@ -44,5 +45,7 @@ pub enum Error {
     AlreadyPaid = 6,
     ArithmeticOverflow = 7,
     InvalidToken = 8,
+    /// Reserved. No longer returned: invoices are keyed by `(business, id)`,
+    /// so another business's invoice is simply `InvoiceNotFound`.
     NotBusiness = 9,
 }
